@@ -89,7 +89,9 @@ function extractMunicipioEstado(
   const estado_nombre = parts[parts.length - 1];
 
   if (suggestion.type === "municipio") {
-    return { estado_nombre };
+    const municipio_nombre =
+      parts.length >= 2 ? parts[parts.length - 2] : undefined;
+    return { municipio_nombre, estado_nombre };
   }
 
   // colonia (nivel 3)

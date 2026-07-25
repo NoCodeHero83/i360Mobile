@@ -147,7 +147,10 @@ function chipTextMatch(
     const f = normalizeStr(lf.municipio || "") || label;
     const pMunicipio = normalizeStr(p.municipio || p.location?.municipio || "");
     const pCiudad = normalizeStr(rawP.ciudad || p.location?.city || "");
-    return includesEither(pMunicipio, f) || includesEither(pCiudad, f);
+    if (includesEither(pMunicipio, f) || includesEither(pCiudad, f)) return true;
+    const pColonia = normalizeStr(p.colonia || p.location?.colony || "");
+    if (pColonia && includesEither(pColonia, label)) return true;
+    return false;
   }
   if (chip.type === "estado") {
     const pEstado = normalizeStr(p.location?.state || rawP.estado || "");

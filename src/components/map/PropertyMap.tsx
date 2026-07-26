@@ -441,12 +441,14 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
   // Re-centrar cuando hay propiedades filtradas pero están fuera del focusRegion
   // (ej: búsqueda por texto encuentra propiedades con colonias coincidentes
   //  pero en coordenadas distintas a la ubicación seleccionada en Google)
-  const hasFitFilteredRef = useRef(false);
+  const hasFitFilteredRef = useRef<string | null>(null);
   useEffect(() => {
     if (Platform.OS === "web" || !nativeMapRef.current || !mapReady) return;
     if (!focusRegion) return;
     if (properties.length === 0) return;
-    if (hasFitFilteredRef.current) return;
+    const regionKey = `${focusRegion.latitude.toFixed(4)}-${focusRegion.longitude.toFixed(4)}`;
+    if (hasFitFilteredRef.current === regionKey) return;
+    hasFitFilteredRef.current = regionKey;
     const propsRegion = calculateRegionWithPadding();
     if (!propsRegion) return;
     const vpSouth = focusRegion.latitude - focusRegion.latitudeDelta / 2;

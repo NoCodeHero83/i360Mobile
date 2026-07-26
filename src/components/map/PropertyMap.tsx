@@ -447,17 +447,28 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
     if (!focusRegion) return;
     if (properties.length === 0) return;
     if (hasFitFilteredRef.current) return;
-    const region = calculateRegionWithPadding();
-    if (!region) return;
-    const isOutside = Math.abs(region.latitude - focusRegion.latitude) > focusRegion.latitudeDelta * 0.8
-      || Math.abs(region.longitude - focusRegion.longitude) > focusRegion.longitudeDelta * 0.8;
-    if (!isOutside) return;
+    const propsRegion = calculateRegionWithPadding();
+    if (!propsRegion) return;
+    const vpSouth = focusRegion.latitude - focusRegion.latitudeDelta / 2;
+    const vpNorth = focusRegion.latitude + focusRegion.latitudeDelta / 2;
+    const vpWest = focusRegion.longitude - focusRegion.longitudeDelta / 2;
+    const vpEast = focusRegion.longitude + focusRegion.longitudeDelta / 2;
+    const prSouth = propsRegion.latitude - propsRegion.latitudeDelta / 2;
+    const prNorth = propsRegion.latitude + propsRegion.latitudeDelta / 2;
+    const prWest = propsRegion.longitude - propsRegion.longitudeDelta / 2;
+    const prEast = propsRegion.longitude + propsRegion.longitudeDelta / 2;
+    const propsOutside = prSouth > vpNorth || prNorth < vpSouth || prWest > vpEast || prEast < vpWest;
+    if (!propsOutside) return;
     hasFitFilteredRef.current = true;
+    const combinedSouth = Math.min(vpSouth, prSouth);
+    const combinedNorth = Math.max(vpNorth, prNorth);
+    const combinedWest = Math.min(vpWest, prWest);
+    const combinedEast = Math.max(vpEast, prEast);
     const combined = {
-      latitude: (region.latitude + focusRegion.latitude) / 2,
-      longitude: (region.longitude + focusRegion.longitude) / 2,
-      latitudeDelta: Math.max(region.latitudeDelta, focusRegion.latitudeDelta) * 1.3,
-      longitudeDelta: Math.max(region.longitudeDelta, focusRegion.longitudeDelta) * 1.3,
+      latitude: (combinedSouth + combinedNorth) / 2,
+      longitude: (combinedWest + combinedEast) / 2,
+      latitudeDelta: (combinedNorth - combinedSouth) * 1.3,
+      longitudeDelta: (combinedEast - combinedWest) * 1.3,
     };
     nativeMapRef.current?.animateToRegion(combined, 700);
   // eslint-disable-next-line react-hooks/exhaustive-deps

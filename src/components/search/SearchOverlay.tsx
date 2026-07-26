@@ -80,6 +80,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
     Keyboard.dismiss();
     setQuery("");
     setActiveTab("todos");
+    setExpandedSections(new Set());
     onClose();
   };
 

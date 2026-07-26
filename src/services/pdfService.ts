@@ -936,6 +936,7 @@ export const pdfService = {
   async generateAndOpenPropertyPdf(
     propertyId: string,
     includeAllData: boolean = true,
+    signal?: { aborted: boolean },
   ): Promise<{ filePath: string; opened: boolean }> {
     // Obtener datos de la propiedad
     const propertyData = await fetchPropertyData(propertyId);
@@ -1000,6 +1001,9 @@ export const pdfService = {
       from: uri,
       to: newPath,
     });
+
+    // Si el modal se cerró, no mostrar dialogo nativo
+    if (signal?.aborted) return { filePath: newPath, opened: false };
 
     // Intentar compartir/abrir el PDF
     let opened = false;

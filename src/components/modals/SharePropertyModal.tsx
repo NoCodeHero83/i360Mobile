@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -48,6 +48,13 @@ const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<"con" | "sin">("con");
   const [downloading, setDownloading] = useState(false);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    if (!visible) {
+      cancelledRef.current = true;
+    }
+  }, [visible]);
 
   const { shareContent } = useShare();
   const { showToast } = useToast();
@@ -68,38 +75,28 @@ const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
     }
   };
 
-  /**
-   * Descarga el PDF de la propiedad
-   * @param includeAllData - true para "Con Datos", false para "Sin Datos"
-   *
-   * CONFIGURACION DE CAMPOS:
-   * Para modificar qué campos se muestran en cada modo, edita los siguientes
-   * objetos en services/pdfService.ts:
-   *
-   * - PDF_FIELD_CONFIG: Configuración base con todos los campos disponibles
-   * - PDF_SIN_DATOS_OVERRIDE: Campos que se ocultan en modo "Sin Datos"
-   *
-   * Ejemplo para ocultar el precio en modo "Sin Datos":
-   * export const PDF_SIN_DATOS_OVERRIDE = {
-   *   ...
-   *   showPrecio: false,
-   * };
-   */
   const downloadPdf = async (includeAllData: boolean = true) => {
-    if (downloading) return;
+    if (downloading || cancelledRef.current) return;
     setDownloading(true);
+    cancelledRef.current = false;
     try {
       const result = await pdfService.generateAndOpenPropertyPdf(
         propertyId,
         includeAllData,
+        cancelledRef,
       );
+
+      if (cancelledRef.current) return;
 
       if (!result?.opened && result?.filePath) {
         showToast("PDF generado correctamente", "success");
       }
 
-      onClose();
+      if (!cancelledRef.current) {
+        onClose();
+      }
     } catch (e: any) {
+      if (cancelledRef.current) return;
       log.error("Error generating PDF:", e);
       showToast(e?.message || "No se pudo generar el PDF", "error");
     } finally {

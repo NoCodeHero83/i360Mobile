@@ -141,7 +141,12 @@ function chipTextMatch(
     const c = Array.isArray(lf.colonia) ? lf.colonia[0] : lf.colonia;
     const term = normalizeStr(c || "") || label;
     const pColonia = normalizeStr(p.colonia || p.location?.colony || "");
-    return includesEither(pColonia, term);
+    if (includesEither(pColonia, term)) return true;
+    if (lf.municipio) {
+      const pMunicipio = normalizeStr(p.municipio || p.location?.municipio || "");
+      if (includesEither(pMunicipio, normalizeStr(lf.municipio))) return true;
+    }
+    return false;
   }
   if (chip.type === "municipio") {
     const f = normalizeStr(lf.municipio || "") || label;

@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { useLocationSearchStore } from "@/store/locationSearchStore";
 import { usePropertyFiltersStore } from "@/store/propertyFiltersStore";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import { router } from "expo-router";
 
 export interface SearchUser {
@@ -217,6 +218,7 @@ export function useSearch() {
   const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const { profile } = useAuth();
   const { searchLocations, suggestions, isLoading: locLoading } = useLocationSearchStore();
   const { clearFilters, setPendingOpenMap } = usePropertyFiltersStore();
   const { setSelectedLocation } = useApp();
@@ -245,6 +247,7 @@ export function useSearch() {
         searchLocations(trimmed, undefined, {
           restrictToRegions: false,
           withCounts: false,
+          estado: profile?.estado,
         });
         setResults({ users, posts, reels, locations: [], properties });
       } finally {

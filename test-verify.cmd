@@ -21,6 +21,16 @@ findstr /c:"profile?.estado" src\hooks\useSearch.ts >nul 2>&1 && (echo [PASO] 1.
 
 echo.
 echo ========================================
+echo  TEST: Re-rank client-side por estado
+echo ========================================
+
+findstr /c:"estado_nombre?.toLowerCase" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 3.1 - store re-rank: compara estado_nombre con userEstado) || (echo [FALLO] 3.1 - store NO re-rank por estado_nombre & set /a ERRORS+=1)
+findstr /c:"userEstado" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 3.2 - store re-rank: define userEstado desde opts) || (echo [FALLO] 3.2 - store NO define userEstado & set /a ERRORS+=1)
+findstr /c:"userEstado.toLowerCase()" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 3.3 - store re-rank: comparacion userEstado) || (echo [FALLO] 3.3 - store NO compara userEstado & set /a ERRORS+=1)
+findstr /c:"ranked" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 3.4 - store re-rank: ranked sustituye a enriched) || (echo [FALLO] 3.4 - store NO usa ranked & set /a ERRORS+=1)
+
+echo.
+echo ========================================
 echo  TEST: geocode() cancelation (Crash 1C)
 echo ========================================
 

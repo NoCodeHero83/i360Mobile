@@ -130,6 +130,8 @@ export async function searchPlaces(
   token?: string,
   country?: CountryCode | string | null,
   types?: string,
+  location?: { lat: number; lng: number },
+  radius?: number,
 ): Promise<PlaceSuggestion[]> {
   if (!GOOGLE_API_KEY || !query.trim()) return [];
   try {
@@ -141,6 +143,8 @@ export async function searchPlaces(
       key: GOOGLE_API_KEY,
       ...(token ? { sessiontoken: token } : {}),
       ...(types ? { types } : {}),
+      ...(location ? { location: `${location.lat},${location.lng}` } : {}),
+      ...(radius ? { radius: String(radius) } : {}),
     });
     const res = await fetch(`${BASE_AUTOCOMPLETE}?${params}`);
     const json = await res.json();

@@ -46,7 +46,7 @@ interface MapSearchProps {
 }
 
 const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { selectedLocation } = useApp();
   const insets = useSafeAreaInsets();
 
@@ -117,6 +117,8 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
   // selectedLocation viene del contexto (home page). Si tiene placeId, usa Place Details
   // directamente para obtener los bounds. Si no, usa Geocoding API como fallback.
   useEffect(() => {
+    const cancelledRef = { current: false };
+
     if (!selectedLocation) {
       setFocusRegion(null);
       addedSelectedChipRef.current = null;
@@ -152,6 +154,7 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
     };
 
     const geocode = async () => {
+      if (cancelledRef.current) return;
       try {
         if (!googleApiKey) return;
 
@@ -159,6 +162,7 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
         const placeId = sel.placeId;
         if (placeId) {
           const details = await getPlaceDetails(placeId);
+          if (cancelledRef.current) return;
           if (details?.bounds) {
             setFocusRegion(boundsToRegion(details.bounds, selectedLocation.type));
             addSelectedAsChip(details.bounds);
@@ -182,7 +186,9 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
         const q = encodeURIComponent(`${selectedLocation.name}, Mexico`);
         const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${q}&region=mx&key=${googleApiKey}`;
         const res = await fetch(url);
+        if (cancelledRef.current) return;
         const json = await res.json();
+        if (cancelledRef.current) return;
         const result = json.results?.[0];
         if (result?.geometry) {
           const { location, bounds, viewport } = result.geometry;
@@ -213,6 +219,10 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
       }
     };
     geocode();
+
+    return () => {
+      cancelledRef.current = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLocation]);
 
@@ -227,6 +237,7 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
         searchLocations(zoneQuery.trim(), undefined, {
           restrictToRegions: false,
           withCounts: false,
+          estado: profile?.estado,
         });
       } else {
         clearSuggestions();

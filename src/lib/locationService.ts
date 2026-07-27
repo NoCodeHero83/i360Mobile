@@ -42,6 +42,8 @@ export async function searchLocations(
   sessionToken?: string,
   country?: CountryCode | string | null,
   types?: string,
+  location?: { lat: number; lng: number },
+  radius?: number,
 ): Promise<LocationSuggestion[]> {
   if (!searchTerm.trim()) return [];
 
@@ -51,7 +53,7 @@ export async function searchLocations(
     // entren en las 5 predicciones que devuelve la API (límite de Autocomplete legacy).
     // Si `types` es undefined, la API devuelve todos los tipos (paridad con el
     // buscador de ubicaciones de los posts de búsqueda).
-    const predictions = await searchPlaces(searchTerm, sessionToken, country, types);
+    const predictions = await searchPlaces(searchTerm, sessionToken, country, types, location, radius);
     return predictions.slice(0, limit).map((p) => ({
       placeId: p.placeId,
       name: p.mainText,

@@ -40,7 +40,7 @@ interface LocationSearchState {
   searchLocations: (
     searchTerm: string,
     country?: CountryCode,
-    opts?: { restrictToRegions?: boolean; withCounts?: boolean },
+    opts?: { restrictToRegions?: boolean; withCounts?: boolean; estado?: string },
   ) => Promise<void>;
   clearSuggestions: () => void;
   refreshSessionToken: () => void;
@@ -110,7 +110,7 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
   searchLocations: async (
     searchTerm: string,
     country: CountryCode = DEFAULT_COUNTRY,
-    opts?: { restrictToRegions?: boolean; withCounts?: boolean },
+    opts?: { restrictToRegions?: boolean; withCounts?: boolean; estado?: string },
   ) => {
     if (!searchTerm.trim()) {
       set({ suggestions: [] });
@@ -125,9 +125,18 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
     const types = opts?.restrictToRegions === false ? undefined : "(regions)";
     const withCounts = opts?.withCounts !== false;
 
+    // Location bias: si el caller proporciona el estado del usuario, resolver sus
+    // coordenadas centrales para sesgar los resultados de Google Places hacia esa zona.
+    const config = getCountryConfig(country);
+    const biasCoords = opts?.estado ? config.level1Coords[opts.estado] : undefined;
+
     try {
       const { sessionToken } = get();
-      const results = await searchLocations(searchTerm, 10, sessionToken, country, types);
+      const results = await searchLocations(
+        searchTerm, 10, sessionToken, country, types,
+        biasCoords ?? undefined,
+        biasCoords ? 100000 : undefined,
+      );
 
       const enriched: LocationSuggestionWithCount[] = results.map((loc) => ({
         ...loc,

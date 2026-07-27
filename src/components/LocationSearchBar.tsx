@@ -29,6 +29,7 @@ import { useRouter } from "expo-router";
 import { supabase } from "../lib/supabase";
 import { Image } from "expo-image";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import SearchOverlay from "./search/SearchOverlay";
 
 interface LocationSearchBarProps {
@@ -55,6 +56,7 @@ export const LocationSearchBar: React.FC<LocationSearchBarProps> = ({
   const [propertySuggestions, setPropertySuggestions] = useState<PropertyCodeSuggestion[]>([]);
   const [preloadedSuggestions] = useState<LocationSuggestionWithCount[]>([]);
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
+  const { profile } = useAuth();
   const { selectedLocation } = useApp();
 
   const router = useRouter();
@@ -64,7 +66,7 @@ export const LocationSearchBar: React.FC<LocationSearchBarProps> = ({
   // Buscar ubicaciones con debounce
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      searchLocations(query);
+      searchLocations(query, undefined, { estado: profile?.estado });
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);

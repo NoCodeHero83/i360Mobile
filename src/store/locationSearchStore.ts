@@ -143,16 +143,33 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
         ...extractMunicipioEstado(loc, country),
       }));
 
+      // Re-rank client-side: las sugerencias del mismo estado del usuario
+      // aparecen primero, preservando el orden relativo dentro de cada grupo.
+      // Google Places bias (location+radius) es insuficiente: ciudades grandes
+      // de otros estados siguen apareciendo primero. Este sort asegura que
+      // resultados locales tengan prioridad real en la UI.
+      const userEstado = opts?.estado;
+      const ranked = userEstado
+        ? [
+            ...enriched.filter(
+              (s) => s.estado_nombre?.toLowerCase() === userEstado.toLowerCase(),
+            ),
+            ...enriched.filter(
+              (s) => s.estado_nombre?.toLowerCase() !== userEstado.toLowerCase(),
+            ),
+          ]
+        : enriched;
+
       // Mostrar las sugerencias de inmediato (y quitar el spinner); el conteo
       // se rellena después sin bloquear la UI.
-      set({ suggestions: enriched, isLoading: false });
+      set({ suggestions: ranked, isLoading: false });
 
       // Conteo de propiedades por zona (diferido, no bloquea la UI).
       // Se cuenta usando la JERARQUÍA de la sugerencia (nombre + municipio +
       // estado) para evitar falsos positivos por nombres repetidos en distintas
       // regiones (p. ej. "Centro" existe en muchas ciudades).
       // Se omite si el caller no muestra el conteo (p. ej. buscador general).
-      if (withCounts && enriched.length > 0) {
+      if (withCounts && ranked.length > 0) {
         const keyOf = (
           tipo?: string | null,
           nombre?: string | null,
@@ -160,7 +177,7 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
           estado?: string | null,
         ) => `${tipo ?? ""}|${nombre ?? ""}|${municipio ?? ""}|${estado ?? ""}`;
         try {
-          const zonas = enriched.map((s) => ({
+          const zonas = ranked.map((s) => ({
             tipo: s.type,
             nombre: s.name,
             municipio: s.municipio_nombre ?? null,

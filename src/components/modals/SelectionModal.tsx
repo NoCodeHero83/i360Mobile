@@ -90,8 +90,8 @@ export default function SelectionModal({
       contentStyle={styles.modalContent}
     >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
         style={styles.kavWrapper}
       >
         {/* Search Bar */}
@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.cardBorder,
   },
   kavWrapper: {
-    flexShrink: 1,
+    minHeight: SCREEN_HEIGHT * 0.5,
   },
   searchContainer: {
     margin: 16,

@@ -70,7 +70,7 @@ export const LocationSearchBar: React.FC<LocationSearchBarProps> = ({
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [query, searchLocations]);
+  }, [query, searchLocations, profile?.estado]);
 
   // Buscar propiedad por código
   useEffect(() => {

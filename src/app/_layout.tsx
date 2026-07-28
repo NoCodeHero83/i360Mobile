@@ -24,6 +24,13 @@ import {
   AppStateStatus,
 } from "react-native";
 
+import * as Sentry from "@sentry/react-native";
+Sentry.init({
+  dsn: "REEMPLAZA_CON_TU_DSN_DE_SENTRY",
+  tracesSampleRate: 0.2,
+  enabled: !__DEV__,
+});
+
 import { AppProvider } from "@/context/AppContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
@@ -173,6 +180,20 @@ function useReactQueryAppStateFocus() {
 
 export default function RootLayout() {
   useReactQueryAppStateFocus();
+
+  // Atrapa errores JS no manejados (promesas, efectos) para evitar crash
+  // en producción. En desarrollo React Native ya muestra RedBox.
+  useEffect(() => {
+    const handler = (error: Error) => {
+      Sentry.captureException(error);
+    };
+    // ErrorUtils existe en RN para establecer manejador global
+    const prevHandler = (ErrorUtils as any)?.getGlobalHandler?.();
+    (ErrorUtils as any)?.setGlobalHandler?.((error: Error, isFatal: boolean) => {
+      handler(error);
+      prevHandler?.(error, isFatal);
+    });
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

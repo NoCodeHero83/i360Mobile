@@ -160,7 +160,7 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
         if (localCount < 2) {
           const fallbackSearchTerm = `${searchTerm}, ${userEstado}`;
           const fallbackResults = await searchLocations(
-            fallbackSearchTerm, 5, sessionToken, country, types,
+            fallbackSearchTerm, 5, sessionToken, country, "(regions)",
           );
           const fallbackEnriched = fallbackResults.map((loc) => ({
             ...loc,

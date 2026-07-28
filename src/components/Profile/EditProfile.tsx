@@ -364,8 +364,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.cardBorder,
     backgroundColor: COLORS.white,
     // SafeArea for top could be handled by parent or SafeAreaView
-    paddingTop: Platform.OS === "ios" ? 50 : 10,
-    marginTop: Platform.OS === "ios" ? 50 : 10,
+    paddingTop: Platform.OS === "ios" ? 60 : 10,
   },
   backButton: {
     padding: 8,

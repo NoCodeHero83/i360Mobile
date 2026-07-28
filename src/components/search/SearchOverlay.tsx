@@ -72,6 +72,8 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
   useEffect(() => {
     if (visible) {
       setQuery(initialQuery);
+      setExpandedSections(new Set());
+      setActiveTab("todos");
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [visible]);
@@ -102,7 +104,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
   };
 
   const renderTabTodos = () => {
-    const sectionState = (key: string, items: unknown[], limit: number) => {
+    const sectionState = <T,>(key: string, items: T[], limit: number) => {
       const isExpanded = expandedSections.has(key);
       return {
         isExpanded,

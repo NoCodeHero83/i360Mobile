@@ -245,7 +245,7 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [zoneQuery, isZoneSearchOpen]);
+  }, [zoneQuery, isZoneSearchOpen, profile?.estado]);
 
   const openZoneSearch = () => {
     setIsZoneSearchOpen(true);

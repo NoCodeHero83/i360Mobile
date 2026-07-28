@@ -26,7 +26,7 @@ import {
 
 import * as Sentry from "@sentry/react-native";
 Sentry.init({
-  dsn: "REEMPLAZA_CON_TU_DSN_DE_SENTRY",
+  dsn: "https://8ec2cbc6b0f7d719fbbbb7263f3f2a8e@o4511815556464640.ingest.us.sentry.io/4511815562362880",
   tracesSampleRate: 0.2,
   enabled: !__DEV__,
 });

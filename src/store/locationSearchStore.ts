@@ -145,22 +145,42 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
         ...extractMunicipioEstado(loc, country),
       }));
 
-      // Re-rank client-side: las sugerencias del mismo estado del usuario
-      // aparecen primero, preservando el orden relativo dentro de cada grupo.
-      // Google Places bias (location+radius) es insuficiente: ciudades grandes
-      // de otros estados siguen apareciendo primero. Este sort asegura que
-      // resultados locales tengan prioridad real en la UI.
+      // Re-rank + fallback geográfico:
+      // 1) Google Places bias (location+radius) es insuficiente: ciudades grandes
+      //    de otros estados aparecen primero. El re-rank sube resultados locales.
+      // 2) Fallback: si hay menos de 2 sugerencias del estado del usuario, Google
+      //    no incluyó resultados locales menos prominentes (ej. "San Nicolás Premier").
+      //    Se hace una segunda búsqueda con "{query}, {estado}" y se fusionan.
       const userEstado = opts?.estado;
+      let combined = enriched;
+      if (userEstado) {
+        const localCount = enriched.filter(
+          (s) => s.estado_nombre?.toLowerCase() === userEstado.toLowerCase(),
+        ).length;
+        if (localCount < 2) {
+          const fallbackSearchTerm = `${searchTerm}, ${userEstado}`;
+          const fallbackResults = await searchLocations(
+            fallbackSearchTerm, 5, sessionToken, country, types,
+          );
+          const fallbackEnriched = fallbackResults.map((loc) => ({
+            ...loc,
+            ...extractMunicipioEstado(loc, country),
+          }));
+          const firstIds = new Set(enriched.map((s) => s.placeId));
+          const nonDuplicated = fallbackEnriched.filter((s) => !firstIds.has(s.placeId));
+          combined = [...enriched, ...nonDuplicated];
+        }
+      }
       const ranked = userEstado
         ? [
-            ...enriched.filter(
+            ...combined.filter(
               (s) => s.estado_nombre?.toLowerCase() === userEstado.toLowerCase(),
             ),
-            ...enriched.filter(
+            ...combined.filter(
               (s) => s.estado_nombre?.toLowerCase() !== userEstado.toLowerCase(),
             ),
           ]
-        : enriched;
+        : combined;
 
       // Mostrar las sugerencias de inmediato (y quitar el spinner); el conteo
       // se rellena después sin bloquear la UI.

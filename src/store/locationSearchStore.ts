@@ -11,6 +11,7 @@ import {
 } from "../lib/locationService";
 import { getCountryConfig, DEFAULT_COUNTRY } from "../lib/location/registry";
 import type { CountryCode } from "../lib/location/types";
+import * as Sentry from "@sentry/react-native";
 import { supabase } from "../lib/supabase";
 import { logger } from "@/utils/logger";
 
@@ -132,6 +133,12 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
     const config = getCountryConfig(country);
     const biasCoords = opts?.estado ? config.level1Coords[opts.estado] : undefined;
 
+    Sentry.addBreadcrumb({
+      category: "search",
+      message: `searchLocations: estado="${opts?.estado}", biasCoords=${biasCoords ? "found" : "none"}, types="${types ?? "all"}"`,
+      level: "debug",
+    });
+
     try {
       const { sessionToken } = get();
       const results = await searchLocations(
@@ -160,7 +167,7 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
         if (localCount < 2) {
           const fallbackSearchTerm = `${searchTerm}, ${userEstado}`;
           const fallbackResults = await searchLocations(
-            fallbackSearchTerm, 5, sessionToken, country, "(regions)",
+            fallbackSearchTerm, 5, sessionToken, country, types,
           );
           const fallbackEnriched = fallbackResults.map((loc) => ({
             ...loc,
@@ -169,6 +176,12 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
           const firstIds = new Set(enriched.map((s) => s.placeId));
           const nonDuplicated = fallbackEnriched.filter((s) => !firstIds.has(s.placeId));
           combined = [...enriched, ...nonDuplicated];
+
+          Sentry.addBreadcrumb({
+            category: "search",
+            message: `fallback: q="${fallbackSearchTerm}", found=${fallbackResults.length}, new=${nonDuplicated.length}, localCount=${localCount}`,
+            level: "debug",
+          });
         }
       }
       const ranked = userEstado
@@ -181,6 +194,12 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
             ),
           ]
         : combined;
+
+      Sentry.addBreadcrumb({
+        category: "search",
+        message: `rank: userEstado="${userEstado ?? "none"}", total=${ranked.length}, local=${ranked.filter(s => s.estado_nombre?.toLowerCase() === userEstado?.toLowerCase()).length}`,
+        level: "debug",
+      });
 
       // Mostrar las sugerencias de inmediato (y quitar el spinner); el conteo
       // se rellena después sin bloquear la UI.

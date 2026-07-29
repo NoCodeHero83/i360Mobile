@@ -13,7 +13,7 @@ echo ========================================
 
 findstr /c:"_score" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 1.1 - Score textual definido) || (echo [FALLO] 1.1 - Score NO definido & set /a ERRORS+=1)
 findstr /c:"name === q" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 1.2 - Comparacion exacta name===q) || (echo [FALLO] 1.2 - Sin comparacion exacta & set /a ERRORS+=1)
-findstr /c:"name.startsWith" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 1.3 - startsWith implementado) || (echo [FALLO] 1.3 - Sin startsWith & set /a ERRORS+=1)
+findstr /c:"normalize" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 1.3 - Normalize de acentos en score) || (echo [FALLO] 1.3 - Sin normalize en score & set /a ERRORS+=1)
 findstr /c:"a._score - b._score" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 1.4 - Sort por score) || (echo [FALLO] 1.4 - Sort NO prioriza score & set /a ERRORS+=1)
 findstr /c:"scoreDiff" src\store\locationSearchStore.ts >nul 2>&1 && (echo [PASO] 1.5 - scoreDiff usado como principal) || (echo [FALLO] 1.5 - scoreDiff NO es principal & set /a ERRORS+=1)
 
@@ -32,10 +32,10 @@ echo ========================================
 echo  3. Busqueda por colonia/municipio
 echo ========================================
 
-findstr /c:"colonia.ilike" src\hooks\useSearch.ts >nul 2>&1 && (echo [PASO] 3.1 - Busqueda por colonia) || (echo [FALLO] 3.1 - Sin busqueda por colonia & set /a ERRORS+=1)
-findstr /c:"municipio.ilike" src\hooks\useSearch.ts >nul 2>&1 && (echo [PASO] 3.2 - Busqueda por municipio) || (echo [FALLO] 3.2 - Sin busqueda por municipio & set /a ERRORS+=1)
+findstr /c:"unaccent(colonia)" src\hooks\useSearch.ts >nul 2>&1 && (echo [PASO] 3.1 - unaccent en colonia) || (echo [FALLO] 3.1 - Sin unaccent en colonia & set /a ERRORS+=1)
+findstr /c:"unaccent(municipio)" src\hooks\useSearch.ts >nul 2>&1 && (echo [PASO] 3.2 - unaccent en municipio) || (echo [FALLO] 3.2 - Sin unaccent en municipio & set /a ERRORS+=1)
 findstr /c:"codigo_propiedad.ilike" src\hooks\useSearch.ts >nul 2>&1 && (echo [PASO] 3.3 - Codigo propiedad conservado) || (echo [FALLO] 3.3 - Codigo propiedad eliminado & set /a ERRORS+=1)
-findstr /c:"colonia.ilike" src\hooks\useSearch.ts >nul 2>&1 && (echo [PASO] 3.4 - .or con colonia presente) || (echo [FALLO] 3.4 - Sin .or con colonia & set /a ERRORS+=1)
+findstr /c:"normalize" src\hooks\useSearch.ts >nul 2>&1 && (echo [PASO] 3.4 - normalize presente en fetchProperties) || (echo [FALLO] 3.4 - Sin normalize en fetchProperties & set /a ERRORS+=1)
 
 echo.
 echo ========================================

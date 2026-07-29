@@ -11,7 +11,6 @@ import {
 } from "../lib/locationService";
 import { getCountryConfig, DEFAULT_COUNTRY } from "../lib/location/registry";
 import type { CountryCode } from "../lib/location/types";
-import * as Sentry from "@sentry/react-native";
 import { supabase } from "../lib/supabase";
 import { logger } from "@/utils/logger";
 
@@ -148,12 +147,6 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
 
     const biasCoords = effectiveEstado ? config.level1Coords[effectiveEstado] : undefined;
 
-    Sentry.addBreadcrumb({
-      category: "search",
-      message: `searchLocations: estado="${effectiveEstado}", biasCoords=${biasCoords ? "found" : "none"}, types="${types ?? "all"}"`,
-      level: "debug",
-    });
-
     try {
       const { sessionToken } = get();
       const results = await searchLocations(
@@ -190,12 +183,6 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
           const firstIds = new Set(enriched.map((s) => s.placeId));
           const nonDuplicated = fallbackEnriched.filter((s) => !firstIds.has(s.placeId));
           combined = [...enriched, ...nonDuplicated];
-
-          Sentry.addBreadcrumb({
-            category: "search",
-            message: `fallback: q="${fallbackSearchTerm}", found=${fallbackResults.length}, new=${nonDuplicated.length}, localCount=${localCount}`,
-            level: "debug",
-          });
         }
       }
       const ranked = effectiveEstado
@@ -208,12 +195,6 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
             ),
           ]
         : combined;
-
-      Sentry.addBreadcrumb({
-        category: "search",
-        message: `rank: estado="${effectiveEstado ?? "none"}", total=${ranked.length}, local=${ranked.filter(s => s.estado_nombre?.toLowerCase() === effectiveEstado?.toLowerCase()).length}`,
-        level: "debug",
-      });
 
       // Mostrar las sugerencias de inmediato (y quitar el spinner); el conteo
       // se rellena después sin bloquear la UI.

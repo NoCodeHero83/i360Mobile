@@ -24,7 +24,6 @@ import {
   AppStateStatus,
 } from "react-native";
 
-import * as Sentry from "@sentry/react-native";
 import { AppProvider } from "@/context/AppContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
@@ -175,15 +174,6 @@ function useReactQueryAppStateFocus() {
 function RootLayoutInner() {
   useReactQueryAppStateFocus();
 
-  // Inicializar Sentry DIFERIDO para no bloquear el arranque
-  useEffect(() => {
-    Sentry.init({
-      dsn: "https://8ec2cbc6b0f7d719fbbbb7263f3f2a8e@o4511815556464640.ingest.us.sentry.io/4511815562362880",
-      tracesSampleRate: 0.2,
-      enabled: !__DEV__,
-    });
-  }, []);
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ErrorBoundary>
@@ -209,8 +199,7 @@ function RootLayoutInner() {
   );
 }
 
-const RootLayout = Sentry.wrap(RootLayoutInner);
-export default RootLayout;
+export default RootLayoutInner;
 
 function RootLayoutNav() {
   const { session, profile, loading: authLoading } = useAuth();

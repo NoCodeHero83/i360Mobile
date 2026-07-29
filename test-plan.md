@@ -1,189 +1,278 @@
-# Plan de pruebas — Fixes de ubicaciones y mapa
+# Plan de pruebas completo — Fixes de ubicaciones, mapa y búsqueda
 
-## 1. Score textual + re-rank
+## Convenciones
+- 🟢 = Prueba de código estático (test-verify-v2.cmd)
+- 🔵 = Prueba contra API de Google (verificación remota)
+- 🟠 = Prueba funcional en app (requiere TestFlight)
 
-### Prerrequisito
-Usuario con `profile.estado = "Aguascalientes"` (ej. `jdiazarmas@gmail.com`)
+---
 
-### TC-1.1: Prioridad de coincidencia exacta
-1. Buscar `"San Nicolás Premier"`
-2. **Esperado:** 1er resultado = `"San Nicolás Premier, Aguascalientes"`
-3. 2do resultado = `"San Nicolás, Aguascalientes"` (fallback)
+## 1. Score textual + re-rank (locationSearchStore.ts)
 
-### TC-1.2: Prioridad de coincidencia exacta sobre parcial
+### 🟢 1.1 — Score textual definido
+Verificar que `_score` existe en el código.
+```bash
+findstr /c:"_score" src/store/locationSearchStore.ts
+```
+
+### 🟢 1.2 — Normalización de acentos
+Verificar que `normalize("NFD")` se usa en el score.
+```bash
+findstr /c:"normalize" src/store/locationSearchStore.ts
+```
+
+### 🔵 1.3 — Google Places: "San Nicolás Premier" sin bias
+```bash
+GET https://maps.googleapis.com/maps/api/place/autocomplete/json
+  ?input=San%20Nicol%C3%A1s%20Premier
+  &components=country:mx&language=es
+```
+**Esperado:** 1er resultado = `"San Nicolás Premier, Boulevard Juan Pablo II, Aguascalientes, Ags."`
+
+### 🔵 1.4 — Google Places: "San Nicolás Premier" con bias Ags
+Ídem 1.3 + `location=21.8853,-102.2916&radius=100000`
+**Esperado:** Mismo resultado 1ro, bias no cambia orden (el query ya es específico)
+
+### 🔵 1.5 — Fallback con (regions)
+```bash
+GET https://maps.googleapis.com/maps/api/place/autocomplete/json
+  ?input=San%20Nicol%C3%A1s%20Premier,%20Aguascalientes
+  &components=country:mx&language=es&types=(regions)
+```
+**Esperado:** 1er resultado = `"San Nicolás, Aguascalientes, México"`
+
+### 🟠 1.6 — App: "San Nicolás Premier" orden correcto
+1. Loguear con `jdiazarmas@gmail.com` (Aguascalientes)
+2. Buscar `"San Nicolás Premier"`
+3. **Esperado:** 1ro = "San Nicolás Premier" | 2do = "San Nicolás, Ags."
+
+### 🟠 1.7 — App: "San Nicolás" orden correcto
 1. Buscar `"San Nicolás"`
-2. **Esperado:** 1er resultado = `"San Nicolás, Aguascalientes"` (exacto)
-3. Resultados de NL, CDMX después
+2. **Esperado:** 1ro = "San Nicolás, Ags." (exacto) | luego NL, CDMX, etc.
 
-### TC-1.3: Score textual en otros estados
-1. Buscar `"San Nicolás"`
-2. **Esperado:** resultados de Aguascalientes primero, luego otros estados ordenados por score
+### 🟠 1.8 — App: "San Nicolas" sin acento
+1. Buscar `"San Nicolas"` (sin acento)
+2. **Esperado:** mismo orden que 1.6 / 1.7 (acentos normalizados)
 
-### TC-1.4: Término sin coincidencias exactas
-1. Buscar `"Nicolás"`
-2. **Esperado:** resultados de Aguascalientes con mayor score primero
-
-### TC-1.5: Usuario sin estado configurado
+### 🟠 1.9 — App: usuario sin estado
 1. Usar cuenta sin `profile.estado`
 2. Buscar `"San Nicolás"`
-3. **Esperado:** orden original de Google (sin re-rank geográfico)
-
-### TC-1.6: Coincidencia case-insensitive
-1. Buscar `"san nicolás premier"` (minúsculas)
-2. **Esperado:** mismo orden que TC-1.1
-
-### TC-1.7: Un solo resultado en Ags.
-1. Buscar un término que solo devuelva 1 resultado de Ags.
-2. **Esperado:** ese resultado primero, seguido de otros estados
+3. **Esperado:** orden original de Google (sin re-rank)
 
 ---
 
-## 2. Throttle de setFocusRegion
+## 2. Búsqueda por colonia/municipio (useSearch.ts fetchProperties)
 
-### TC-2.1: Múltiples búsquedas rápidas
-1. Abrir mapa
-2. Buscar rápidamente 3 ubicaciones consecutivas (ej. "San Nicolás", "Jesús María", "Loretta") con <1s entre cada una
-3. **Esperado:** NO hay crash. El mapa centra en la ÚLTIMA ubicación después de 400ms
+### 🟢 2.1 — Normalización de acentos en query Supabase
+```bash
+findstr /c:"normalize" src/hooks/useSearch.ts
+```
 
-### TC-2.2: Búsqueda desde home + mapa
-1. Seleccionar ubicación desde home (LocationSearchBar)
-2. Navegar al mapa
-3. Inmediatamente buscar otra zona en el mapa
-4. **Esperado:** NO hay crash. Mapa centra correctamente
+### 🟢 2.2 — unaccent en colonia
+```bash
+findstr /c:"unaccent(colonia)" src/hooks/useSearch.ts
+```
 
-### TC-2.3: Cinco búsquedas consecutivas
-1. Realizar 5 búsquedas en el mapa seguidas
-2. **Esperado:** Sin crash, sin animaciones encimadas
+### 🔵 2.3 — Google Places: "St Angelo"
+```bash
+GET https://maps.googleapis.com/maps/api/place/autocomplete/json
+  ?input=St%20Angelo&components=country:mx&language=es
+```
+**Esperado:** 1er resultado = `"ST. ANGELO RESIDENCE, Avenida Eugenio Garza Sada, Aguascalientes, Ags."`
 
-### TC-2.4: Cancelación de búsqueda a mitad
-1. Iniciar búsqueda
-2. Antes de que termine, seleccionar otra ubicación
-3. **Esperado:** Sin crash, mapa centra en la última
+### 🔵 2.4 — Google Places: "San Angelo" (sin St)
+```bash
+GET https://maps.googleapis.com/maps/api/place/autocomplete/json
+  ?input=San%20Angelo%20Residence&components=country:mx&language=es
+```
+**Esperado:** 0 resultados (Google solo reconoce "St Angelo")
 
----
+### 🟠 2.5 — App overlay general: "St Angelo" encuentra propiedades
+1. Abrir overlay de búsqueda (home)
+2. Buscar `"St Angelo"`
+3. **Esperado:** Aparecen propiedades en sección "Fichas" con colonia = "St Ángelo Residence"
 
-## 3. Búsqueda por colonia/municipio (San Angelo Residence)
+### 🟠 2.6 — App overlay general: "St Ángelo" con acento
+1. Buscar `"St Ángelo"` (con acento)
+2. **Esperado:** Mismas propiedades que 2.5
 
-### TC-3.1: Búsqueda por nombre de fraccionamiento
-1. Buscar `"San Angelo Residence"`
-2. **Esperado:** aparecen propiedades con colonia que contenga "San Angelo Residence"
-
-### TC-3.2: Búsqueda por colonia
-1. Buscar `"Loretta"`
-2. **Esperado:** aparecen propiedades en colonia "Loretta"
-
-### TC-3.3: Búsqueda por municipio
+### 🟠 2.7 — App overlay general: "Jesús María" vs "San Angelo"
 1. Buscar `"Jesús María"`
-2. **Esperado:** aparecen propiedades en municipio "Jesús María"
+2. **Esperado:** Aparecen propiedades en Jesús María
+3. Buscar `"San Angelo"`
+4. **Esperado:** Aparecen propiedades con colonia que contiene "Angelo"
 
-### TC-3.4: Coincidencia en código de propiedad (regresión)
-1. Buscar código de propiedad existente (ej. "ILY-00123")
-2. **Esperado:** la propiedad aparece (búsqueda por codigo_propiedad se conserva)
+### 🟠 2.8 — App overlay general: código de propiedad (regresión)
+1. Buscar código existente (ej. `"ILY-00123"`)
+2. **Esperado:** la propiedad aparece (codigo_propiedad se conserva)
 
-### TC-3.5: Sin resultados en búsqueda general
-1. Buscar término sin propiedades asociadas
-2. **Esperado:** resultados vacíos sin errores
-
-### TC-3.6: Límite de resultados
-1. Buscar término muy común
-2. **Esperado:** máximo 20 resultados
+### 🟠 2.9 — App overlay general: término sin propiedades
+1. Buscar término sin propiedades
+2. **Esperado:** 0 fichas, sin errores
 
 ---
 
-## 4. mountedRef en handleAddLocationChip
+## 3. Throttle de setFocusRegion (MapSearch.tsx)
 
-### TC-4.1: Clic rápido en sugerencias
-1. Abrir buscador de zonas en mapa
-2. Hacer clic rápido en 2 sugerencias diferentes
-3. **Esperado:** solo se agrega 1 chip (el mountedRef evita state post-unmount)
+### 🟢 3.1 — focusThrottleRef definido
+```bash
+findstr /c:"focusThrottleRef" src/components/map/MapSearch.tsx
+```
 
-### TC-4.2: Cerrar buscador durante carga
-1. Abrir buscador de zonas
-2. Hacer clic en sugerencia
-3. Inmediatamente cerrar el buscador (botón X)
-4. **Esperado:** sin error, sin crash
+### 🟢 3.2 — setFocusRegionThrottled definida
+```bash
+findstr /c:"setFocusRegionThrottled" src/components/map/MapSearch.tsx
+```
 
-### TC-4.3: Navegar fuera del mapa durante carga
-1. Abrir buscador de zonas
-2. Hacer clic en sugerencia
-3. Inmediatamente navegar a otra pantalla
-4. **Esperado:** sin error al volver al mapa
+### 🟢 3.3 — Timeout 400ms presente
+```bash
+findstr /c:"400" src/components/map/MapSearch.tsx
+```
 
-### TC-4.4: Acumulación de chips en búsquedas consecutivas
-1. Buscar "San Nicolás" → agregar chip
-2. Buscar "Jesús María" → agregar chip
-3. Buscar "Loretta" → agregar chip
-4. **Esperado:** 3 chips en la barra de filtros, no hay crash ni lentitud
+### 🟠 3.4 — Múltiples búsquedas rápidas en mapa
+1. Abrir mapa
+2. Buscar "San Nicolás", "Jesús María", "Loretta" en <1s cada una
+3. **Esperado:** Sin crash. Mapa centra en la última.
 
-### TC-4.5: Chip con ID único por Date.now()
-1. Verificar que cada chip tiene ID único
-2. **Esperado:** no hay conflictos de key en React
+### 🟠 3.5 — Cinco búsquedas consecutivas
+1. Realizar 5 búsquedas seguidas en el mapa
+2. **Esperado:** Sin crash
 
 ---
 
-## 5. Editar Perfil — Selector de estado
+## 4. mountedRef en handleAddLocationChip (MapSearch.tsx)
 
-### TC-5.1: Apertura del selector
+### 🟢 4.1 — mountedRef presente
+```bash
+findstr /c:"mountedRef" src/components/map/MapSearch.tsx
+```
+
+### 🟢 4.2 — Guard mountedRef antes de addLocationChip
+```bash
+findstr /c:"mountedRef.current) return" src/components/map/MapSearch.tsx
+```
+
+### 🟠 4.3 — Clic rápido en 2 sugerencias
+1. Buscador de zonas abierto
+2. Click rápido en 2 sugerencias diferentes
+3. **Esperado:** Sin crash. Chips se agregan sin duplicados problemáticos.
+
+### 🟠 4.4 — Cerrar buscador durante carga
+1. Abrir buscador de zonas
+2. Seleccionar sugerencia
+3. Cerrar inmediatamente (botón X)
+4. **Esperado:** Sin error
+
+---
+
+## 5. SelectionModal (selector de estado en EditProfile)
+
+### 🟢 5.1 — KeyboardAvoidingView presente
+```bash
+findstr /c:"KeyboardAvoidingView" src/components/modals/SelectionModal.tsx
+```
+
+### 🟢 5.2 — keyboardVerticalOffset definido
+```bash
+findstr /c:"keyboardVerticalOffset" src/components/modals/SelectionModal.tsx
+```
+
+### 🟠 5.3 — Selector con teclado visible
 1. Ir a Editar Perfil
-2. Tocar campo de estado
-3. **Esperado:** modal aparece con lista de 32 estados
-
-### TC-5.2: Búsqueda con teclado visible
-1. Abrir selector de estado
-2. Tocar campo de búsqueda (teclado se abre)
+2. Tocar campo Ubicación
 3. Escribir texto
-4. **Esperado:** la lista de resultados es COMPLETAMENTE VISIBLE, no oculta por el teclado
+4. **Esperado:** Lista visible, no oculta por teclado
 
-### TC-5.3: Sin resultados
-1. Abrir selector, escribir texto sin match
-2. **Esperado:** mensaje "No se encontraron resultados" visible (no oculto por teclado)
+### 🟠 5.4 — Sin resultados
+1. Escribir texto sin match
+2. **Esperado:** Mensaje "No se encontraron resultados" visible
 
-### TC-5.4: Selección de estado
+### 🟠 5.5 — Seleccionar estado
 1. Escribir "Aguascalientes"
-2. Tocar el resultado
-3. **Esperado:** modal se cierra, campo muestra "Aguascalientes"
-
-### TC-5.5: Búsqueda con pocos caracteres
-1. Escribir "A"
-2. **Esperado:** lista filtrada se muestra, no se comprime ni oculta
+2. Tocar resultado
+3. **Esperado:** Modal se cierra, campo muestra "Aguascalientes"
 
 ---
 
-## 6. Ver más / Ver menos en buscador general
+## 6. expandedSections en SearchOverlay
 
-### TC-6.1: Toggle de ubicaciones
+### 🟢 6.1 — Reset al abrir overlay
+```bash
+findstr /c:"setExpandedSections(new Set())" src/components/search/SearchOverlay.tsx
+```
+
+### 🟠 6.2 — Ver más / Ver menos
 1. Buscar término con 5+ ubicaciones
-2. **Esperado:** se muestran 2 ubicaciones + botón "Ver todos (5)"
+2. **Esperado:** 2 ubicaciones + "Ver todos (5)"
+3. Tocar "Ver todos" → muestra 5, botón cambia a "Ver menos"
+4. Tocar "Ver menos" → vuelve a 2
 
-### TC-6.2: Expandir sección
-1. Tocar "Ver todos (5)"
-2. **Esperado:** se muestran las 5, botón cambia a "Ver menos"
-
-### TC-6.3: Colapsar sección
-1. Tocar "Ver menos"
-2. **Esperado:** vuelve a 2 + "Ver todos (5)"
-
-### TC-6.4: Persistencia al cerrar/abrir overlay
+### 🟠 6.3 — Cerrar y abrir overlay
 1. Expandir ubicaciones
-2. Cerrar overlay
-3. Abrir overlay de nuevo
-4. **Esperado:** sección colapsada (siempre inicia colapsado)
+2. Cerrar overlay (swipe down)
+3. Abrir de nuevo
+4. **Esperado:** Sección colapsada
 
 ---
 
-## 7. Sin regresiones
+## 7. app.json — Configuración de cuenta
 
-### TC-7.1: Búsqueda desde home
-1. Tocar buscador en home
-2. Escribir "Loretta"
-3. **Esperado:** overlay se abre, resultados aparecen, sin crash
+### 🟢 7.1 — Updates deshabilitados
+```bash
+findstr /c:"enabled" app.json | findstr /c:"false"
+```
 
-### TC-7.2: Editar Perfil sin crash
+### 🟢 7.2 — Owner correcto
+```bash
+findstr /c:"imightbewrong" app.json
+```
+
+### 🟢 7.3 — projectId correcto
+```bash
+findstr /c:"fc0a5782" app.json
+```
+
+---
+
+## 8. Sin Sentry
+
+### 🟢 8.1 — Sentry ausente de package.json
+```bash
+findstr /c:"@sentry" package.json
+```
+
+### 🟢 8.2 — Sentry ausente de _layout.tsx
+```bash
+findstr /c:"Sentry" src/app/_layout.tsx
+```
+
+---
+
+## 9. Regresiones críticas
+
+### 🟠 9.1 — Búsqueda "Loretta" desde home
+1. Buscar "Loretta" en overlay general
+2. **Esperado:** Aparecen propiedades en Loretta
+
+### 🟠 9.2 — Editar Perfil y guardar
 1. Ir a Editar Perfil
 2. Modificar nombre
 3. Guardar
-4. **Esperado:** sin error
+4. **Esperado:** Sin error, datos guardados
 
-### TC-7.3: Apertura de la app
-1. Abrir la app 3 veces seguidas
-2. **Esperado:** sin crash en ninguna apertura
+### 🟠 9.3 — Apertura de app 3 veces seguidas
+1. Abrir app
+2. Cerrar
+3. Repetir 3 veces
+4. **Esperado:** Sin crash en ninguna apertura
+
+---
+
+## Resumen de tipos de prueba
+
+| Tipo | Cantidad | Descripción |
+|------|----------|-------------|
+| 🟢 Código | 15 | Verificación de patrones en archivos (test-verify-v2.cmd) |
+| 🔵 API Google | 4 | Llamadas directas a Google Places API |
+| 🟠 Funcional | 19 | Pruebas manuales en app (TestFlight) |
+| **Total** | **38** | |

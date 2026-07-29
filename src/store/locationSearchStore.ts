@@ -186,9 +186,11 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
         }
       }
       // Score textual: priorizar coincidencia exacta, empieza con, contiene
-      const q = searchTerm.toLowerCase();
+      // Normalizar acentos para que "Nicolás" == "Nicolas" (el usuario escribe sin acentos)
+      const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const q = norm(searchTerm);
       const withScore = combined.map((s) => {
-        const name = s.name.toLowerCase();
+        const name = norm(s.name);
         const score = name === q ? 0
           : name.startsWith(q) ? 1
           : name.includes(q) ? 2

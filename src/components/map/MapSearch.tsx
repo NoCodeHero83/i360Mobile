@@ -85,6 +85,16 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
     latitudeDelta: number;
     longitudeDelta: number;
   } | null>(null);
+  const focusThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastFocusRef = useRef<typeof focusRegion>(null);
+  const setFocusRegionThrottled = useCallback((region: typeof focusRegion) => {
+    lastFocusRef.current = region;
+    if (focusThrottleRef.current) return;
+    focusThrottleRef.current = setTimeout(() => {
+      focusThrottleRef.current = null;
+      setFocusRegion(lastFocusRef.current);
+    }, 400);
+  }, []);
 
   // Evita re-agregar el chip de la ubicación elegida en el buscador de inicio.
   const addedSelectedChipRef = useRef<string | null>(null);
@@ -168,14 +178,14 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
           const details = await getPlaceDetails(placeId);
           if (cancelledRef.current) return;
           if (details?.bounds) {
-            setFocusRegion(boundsToRegion(details.bounds, selectedLocation.type));
+            setFocusRegionThrottled(boundsToRegion(details.bounds, selectedLocation.type));
             addSelectedAsChip(details.bounds);
             return;
           }
           if (details?.location) {
             const type = selectedLocation.type;
             const fallbackDelta = type === "colonia" ? 0.03 : type === "municipio" ? 0.06 : 0.05;
-            setFocusRegion({
+            setFocusRegionThrottled({
               latitude: details.location.lat,
               longitude: details.location.lng,
               latitudeDelta: fallbackDelta,
@@ -204,12 +214,12 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
               east: b.northeast.lng,
               west: b.southwest.lng,
             };
-            setFocusRegion(boundsToRegion(gb, selectedLocation.type));
+            setFocusRegionThrottled(boundsToRegion(gb, selectedLocation.type));
             addSelectedAsChip(gb);
           } else if (location) {
             const type = selectedLocation.type;
             const fallbackDelta = type === "colonia" ? 0.03 : type === "municipio" ? 0.06 : 0.05;
-            setFocusRegion({
+            setFocusRegionThrottled({
               latitude: location.lat,
               longitude: location.lng,
               latitudeDelta: fallbackDelta,
@@ -275,11 +285,11 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
         if (!mountedRef.current) return;
         // Refrescar token después de completar la sesión
         sessionTokenRef.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        if (details?.bounds) {
-          bounds = details.bounds;
-          // Centrar el mapa en la zona seleccionada
-          setFocusRegion(boundsToRegion(bounds, loc.type));
-        }
+          if (details?.bounds) {
+            bounds = details.bounds;
+            // Centrar el mapa en la zona seleccionada
+            setFocusRegionThrottled(boundsToRegion(bounds, loc.type));
+          }
       }
     } catch (e) {
       log.warn("Error obteniendo bounds del chip:", e);

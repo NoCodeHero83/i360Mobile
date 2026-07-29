@@ -17,7 +17,7 @@
       "**/*"
     ],
     "updates": {
-      "url": "https://u.expo.dev/1cff47e7-484f-4918-a037-ec4fa89f7c6e",
+      "url": "https://u.expo.dev/fc0a5782-4733-40f7-9c7e-efa6d3550f31",
       "fallbackToCacheTimeout": 0
     },
     "ios": {
@@ -112,11 +112,27 @@
     ],
     "extra": {
       "eas": {
-        "build": {},
-        "projectId": "1cff47e7-484f-4918-a037-ec4fa89f7c6e"
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "OneSignalNotificationServiceExtension",
+                  "bundleIdentifier": "com.ilyrox.app.OneSignalNotificationServiceExtension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.ilyrox.app.onesignal"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "fc0a5782-4733-40f7-9c7e-efa6d3550f31"
       },
       "router": {}
     },
-    "owner": "nocodehero"
+    "owner": "imightbewrong"
   }
 }

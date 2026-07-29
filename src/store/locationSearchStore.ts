@@ -195,16 +195,16 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
           : 3;
         return { ...s, _score: score };
       });
-      const ranked = effectiveEstado
-        ? [
-            ...withScore.filter(
-              (s) => s.estado_nombre?.toLowerCase() === effectiveEstado.toLowerCase(),
-            ).sort((a, b) => a._score - b._score),
-            ...withScore.filter(
-              (s) => s.estado_nombre?.toLowerCase() !== effectiveEstado.toLowerCase(),
-            ).sort((a, b) => a._score - b._score),
-          ]
-        : withScore.sort((a, b) => a._score - b._score);
+      const ranked = withScore.sort((a, b) => {
+        const scoreDiff = a._score - b._score;
+        if (scoreDiff !== 0) return scoreDiff;
+        if (effectiveEstado) {
+          const aLocal = a.estado_nombre?.toLowerCase() === effectiveEstado.toLowerCase();
+          const bLocal = b.estado_nombre?.toLowerCase() === effectiveEstado.toLowerCase();
+          if (aLocal !== bLocal) return aLocal ? -1 : 1;
+        }
+        return 0;
+      });
 
       // Mostrar las sugerencias de inmediato (y quitar el spinner); el conteo
       // se rellena después sin bloquear la UI.

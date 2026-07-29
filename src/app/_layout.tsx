@@ -178,7 +178,7 @@ function useReactQueryAppStateFocus() {
   }, []);
 }
 
-export default function RootLayout() {
+function RootLayoutInner() {
   useReactQueryAppStateFocus();
 
   // Atrapa errores JS no manejados (promesas, efectos) para evitar crash
@@ -219,6 +219,9 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+const RootLayout = Sentry.wrap(RootLayoutInner);
+export default RootLayout;
 
 function RootLayoutNav() {
   const { session, profile, loading: authLoading } = useAuth();

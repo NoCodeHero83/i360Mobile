@@ -7,7 +7,7 @@ export function normalizeStr(s: string): string {
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+    .replace(/[̀-ͯ'.?-]/g, "");
 }
 
 /**

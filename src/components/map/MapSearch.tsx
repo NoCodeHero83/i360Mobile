@@ -127,6 +127,7 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
 
     const sel = selectedLocation as any;
     const selKey = `${sel.type}-${sel.name}`;
+    addedSelectedChipRef.current = null;
 
     // Agrega la ubicación elegida en el buscador de inicio como chip seleccionado
     // (filtro activo), igual que al elegir una zona dentro del mapa.
@@ -244,7 +245,7 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [zoneQuery, isZoneSearchOpen]);
+  }, [zoneQuery, isZoneSearchOpen, profile?.estado]);
 
   const openZoneSearch = () => {
     setIsZoneSearchOpen(true);

@@ -89,7 +89,9 @@ function extractMunicipioEstado(
   const estado_nombre = parts[parts.length - 1];
 
   if (suggestion.type === "municipio") {
-    return { estado_nombre };
+    const municipio_nombre =
+      parts.length >= 2 ? parts[parts.length - 2] : undefined;
+    return { municipio_nombre, estado_nombre };
   }
 
   // colonia (nivel 3)
@@ -128,7 +130,22 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
     // Location bias: si el caller proporciona el estado del usuario, resolver sus
     // coordenadas centrales para sesgar los resultados de Google Places hacia esa zona.
     const config = getCountryConfig(country);
-    const biasCoords = opts?.estado ? config.level1Coords[opts.estado] : undefined;
+
+    // Fallback: si el caller no proporcionó estado, consultar Supabase directo
+    // (cubre casos donde AuthContext no tenga el perfil cargado)
+    let effectiveEstado = opts?.estado;
+    if (!effectiveEstado) {
+      try {
+        const { data: s } = await supabase.auth.getSession();
+        const uid = s?.session?.user?.id;
+        if (uid) {
+          const { data: p } = await supabase.from("perfiles").select("estado").eq("id", uid).maybeSingle();
+          if (p?.estado) effectiveEstado = p.estado;
+        }
+      } catch { /* continuar sin bias */ }
+    }
+
+    const biasCoords = effectiveEstado ? config.level1Coords[effectiveEstado] : undefined;
 
     try {
       const { sessionToken } = get();
@@ -149,16 +166,15 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
       // 2) Fallback: si hay menos de 2 sugerencias del estado del usuario, Google
       //    no incluyó resultados locales menos prominentes (ej. "San Nicolás Premier").
       //    Se hace una segunda búsqueda con "{query}, {estado}" y se fusionan.
-      const userEstado = opts?.estado;
       let combined = enriched;
-      if (userEstado) {
+      if (effectiveEstado) {
         const localCount = enriched.filter(
-          (s) => s.estado_nombre?.toLowerCase() === userEstado.toLowerCase(),
+          (s) => s.estado_nombre?.toLowerCase() === effectiveEstado.toLowerCase(),
         ).length;
         if (localCount < 2) {
-          const fallbackSearchTerm = `${searchTerm}, ${userEstado}`;
+          const fallbackSearchTerm = `${searchTerm}, ${effectiveEstado}`;
           const fallbackResults = await searchLocations(
-            fallbackSearchTerm, 5, sessionToken, country, types,
+            fallbackSearchTerm, 5, sessionToken, country, "(regions)",
           );
           const fallbackEnriched = fallbackResults.map((loc) => ({
             ...loc,
@@ -169,13 +185,13 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
           combined = [...enriched, ...nonDuplicated];
         }
       }
-      const ranked = userEstado
+      const ranked = effectiveEstado
         ? [
             ...combined.filter(
-              (s) => s.estado_nombre?.toLowerCase() === userEstado.toLowerCase(),
+              (s) => s.estado_nombre?.toLowerCase() === effectiveEstado.toLowerCase(),
             ),
             ...combined.filter(
-              (s) => s.estado_nombre?.toLowerCase() !== userEstado.toLowerCase(),
+              (s) => s.estado_nombre?.toLowerCase() !== effectiveEstado.toLowerCase(),
             ),
           ]
         : combined;

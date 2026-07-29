@@ -53,6 +53,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const [activeTab, setActiveTab] = React.useState<Tab>("todos");
+  const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set());
 
   const {
     query,
@@ -71,6 +72,8 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
   useEffect(() => {
     if (visible) {
       setQuery(initialQuery);
+      setExpandedSections(new Set());
+      setActiveTab("todos");
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [visible]);
@@ -79,6 +82,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
     Keyboard.dismiss();
     setQuery("");
     setActiveTab("todos");
+    setExpandedSections(new Set());
     onClose();
   };
 
@@ -90,56 +94,86 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
 
   // ── Contenido de cada tab ──
 
-  const renderTabTodos = () => (
+  const toggleSection = (section: string) => {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      return next;
+    });
+  };
+
+  const renderTabTodos = () => {
+    const sectionState = <T,>(key: string, items: T[], limit: number) => {
+      const isExpanded = expandedSections.has(key);
+      return {
+        isExpanded,
+        displayItems: isExpanded ? items : items.slice(0, limit),
+        showToggle: items.length > limit,
+        toggle: () => toggleSection(key),
+      };
+    };
+
+    return (
     <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-      {/* Usuarios PRIMERO: al buscar un nombre, lo que se busca casi siempre es
-          una persona. Antes las Ubicaciones (hasta 5) empujaban a los usuarios
-          fuera de pantalla y no se encontraban. */}
-      {results.users.length > 0 && (
-        <>
-          <SectionHeader title="Usuarios" />
-          {results.users.slice(0, 3).map((u) => (
-            <UserRow key={u.id} user={u} onPress={() => handleNavigate(() => navigateToUser(u.id))} />
-          ))}
-        </>
-      )}
+      {results.users.length > 0 && (() => {
+        const s = sectionState("users", results.users, 3);
+        return (
+          <>
+            <SectionHeader title="Usuarios" />
+            {s.displayItems.map((u) => (
+              <UserRow key={u.id} user={u} onPress={() => handleNavigate(() => navigateToUser(u.id))} />
+            ))}
+            {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.users.length} onPress={s.toggle} />}
+          </>
+        );
+      })()}
 
-      {results.locations.length > 0 && (
-        <>
-          <SectionHeader
-            title="Ubicaciones"
-            style={results.users.length > 0 ? { marginTop: 20 } : undefined}
-          />
-          {/* Solo 2 en "Todos": las de más se ven en la pestaña Propiedades. */}
-          {results.locations.slice(0, 2).map((l, i) => (
-            <LocationRow key={`${l.id}-${i}`} location={l} onPress={() => handleNavigate(() => selectLocation(l))} />
-          ))}
-        </>
-      )}
+      {results.locations.length > 0 && (() => {
+        const s = sectionState("locations", results.locations, 2);
+        return (
+          <>
+            <SectionHeader title="Ubicaciones" />
+            {s.displayItems.map((l, i) => (
+              <LocationRow key={`${l.id}-${i}`} location={l} onPress={() => handleNavigate(() => selectLocation(l))} />
+            ))}
+            {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.locations.length} onPress={s.toggle} />}
+          </>
+        );
+      })()}
 
-      {results.properties.length > 0 && (
-        <>
-          <SectionHeader title="Fichas" style={{ marginTop: 20 }} />
-          <PropertyFichasGrid
-            items={results.properties.slice(0, 4)}
-            onPress={(id) => handleNavigate(() => navigateToProperty(id))}
-          />
-        </>
-      )}
+      {results.properties.length > 0 && (() => {
+        const s = sectionState("properties", results.properties, 4);
+        return (
+          <>
+            <SectionHeader title="Fichas" />
+            <PropertyFichasGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToProperty(id))} />
+            {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.properties.length} onPress={s.toggle} />}
+          </>
+        );
+      })()}
 
-      {results.posts.length > 0 && (
-        <>
-          <SectionHeader title="Posts" style={{ marginTop: 20 }} />
-          <PostGrid items={results.posts.slice(0, 6)} onPress={(id) => handleNavigate(() => navigateToPost(id))} />
-        </>
-      )}
+      {results.posts.length > 0 && (() => {
+        const s = sectionState("posts", results.posts, 6);
+        return (
+          <>
+            <SectionHeader title="Posts" />
+            <PostGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToPost(id))} />
+            {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.posts.length} onPress={s.toggle} />}
+          </>
+        );
+      })()}
 
-      {results.reels.length > 0 && (
-        <>
-          <SectionHeader title="Reels" style={{ marginTop: 20 }} />
-          <ReelGrid items={results.reels.slice(0, 4)} onPress={(id) => handleNavigate(() => navigateToReel(id))} />
-        </>
-      )}
+      {results.reels.length > 0 && (() => {
+        const s = sectionState("reels", results.reels, 4);
+        return (
+          <>
+            <SectionHeader title="Reels" />
+            <ReelGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToReel(id))} />
+            {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.reels.length} onPress={s.toggle} />}
+          </>
+        );
+      })()}
 
       {results.properties.length === 0 && results.users.length === 0 && results.posts.length === 0 &&
         results.reels.length === 0 && results.locations.length === 0 && !loading && (
@@ -151,6 +185,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
       <View style={{ height: 40 }} />
     </ScrollView>
   );
+  };
 
   const renderTabUsuarios = () => (
     <FlatList
@@ -359,6 +394,20 @@ function UserRow({ user, onPress }: { user: SearchUser; onPress: () => void }) {
         )}
       </View>
       <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
+    </TouchableOpacity>
+  );
+}
+
+function ToggleButton({ isExpanded, count, onPress }: { isExpanded: boolean; count: number; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      style={sectionStyles.toggleBtn}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Text style={sectionStyles.toggleText}>
+        {isExpanded ? `Ver menos` : `Ver todos (${count})`}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -725,6 +774,16 @@ const sectionStyles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: COLORS.textPrimary,
+  },
+  toggleBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  toggleText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.primary,
   },
 });
 

@@ -4,7 +4,10 @@ import { useLocationSearchStore } from "@/store/locationSearchStore";
 import { usePropertyFiltersStore } from "@/store/propertyFiltersStore";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
+import { logger } from "@/utils/logger";
 import { router } from "expo-router";
+
+const log = logger.scoped("useSearch");
 
 export interface SearchUser {
   id: string;
@@ -217,11 +220,16 @@ export function useSearch() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
   const { profile } = useAuth();
   const { searchLocations, suggestions, isLoading: locLoading } = useLocationSearchStore();
   const { clearFilters, setPendingOpenMap } = usePropertyFiltersStore();
   const { setSelectedLocation } = useApp();
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -241,24 +249,26 @@ export function useSearch() {
           fetchReels(trimmed),
           fetchProperties(trimmed),
         ]);
-        // Buscador general: sin filtro "(regions)" para encontrar TODO (igual que
-        // el buscador de los posts de búsqueda) y sin contar propiedades (ese
-        // contador se quitó de la UI del overlay).
+        if (!mountedRef.current) return;
         searchLocations(trimmed, undefined, {
           restrictToRegions: false,
           withCounts: false,
           estado: profile?.estado,
         });
+        if (!mountedRef.current) return;
         setResults({ users, posts, reels, locations: [], properties });
+      } catch (err) {
+        log.warn("Error en búsqueda:", err);
+        if (mountedRef.current) setResults(EMPTY_RESULTS);
       } finally {
-        setLoading(false);
+        if (mountedRef.current) setLoading(false);
       }
     }, 300);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query]);
+  }, [query, profile?.estado]);
 
   // Sync location suggestions from store into results
   useEffect(() => {

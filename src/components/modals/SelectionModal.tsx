@@ -6,8 +6,6 @@ import {
   TouchableOpacity,
   FlatList,
   Dimensions,
-  KeyboardAvoidingView,
-  Platform,
 } from "react-native";
 import { useDismissKeyboardWhenVisible } from "../../hooks/useDismissKeyboardWhenVisible";
 import { Ionicons } from "@expo/vector-icons";
@@ -89,11 +87,7 @@ export default function SelectionModal({
       title={title}
       contentStyle={styles.modalContent}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-        style={styles.kavWrapper}
-      >
+      <View style={styles.kavWrapper}>
         {/* Search Bar */}
         {searchable && (
           <AppInput
@@ -135,7 +129,7 @@ export default function SelectionModal({
             </View>
           }
         />
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -147,7 +141,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.cardBorder,
   },
   kavWrapper: {
-    flexShrink: 1,
+    flex: 1,
   },
   searchContainer: {
     margin: 16,

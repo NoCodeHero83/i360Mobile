@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   FlatList,
   Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useDismissKeyboardWhenVisible } from "../../hooks/useDismissKeyboardWhenVisible";
 import { Ionicons } from "@expo/vector-icons";
@@ -87,49 +89,53 @@ export default function SelectionModal({
       title={title}
       contentStyle={styles.modalContent}
     >
-      <View style={styles.kavWrapper}>
-        {/* Search Bar */}
-        {searchable && (
-          <AppInput
-            containerStyle={styles.searchContainer}
-            placeholder={placeholder}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCorrect={false}
-            leftIcon={<Ionicons name="search" size={20} color={COLORS.textTertiary} />}
-            rightIcon={
-              searchQuery.length > 0 ? (
-                <TouchableOpacity onPress={() => setSearchQuery("")}>
-                  <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
-                </TouchableOpacity>
-              ) : undefined
-            }
-          />
-        )}
-
-        {/* List */}
-        <FlatList
-          data={filteredOptions}
-          keyExtractor={(item, index) => {
-            const val = typeof item === "string" ? item : item.value;
-            return `${val}-${index}`;
-          }}
-          renderItem={renderItem}
-          style={styles.list}
-          contentContainerStyle={styles.listContent}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          initialNumToRender={15}
-          maxToRenderPerBatch={20}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                No se encontraron resultados
-              </Text>
-            </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 0}
+        style={styles.kavWrapper}
+      >
+      {/* Search Bar */}
+      {searchable && (
+        <AppInput
+          containerStyle={styles.searchContainer}
+          placeholder={placeholder}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCorrect={false}
+          leftIcon={<Ionicons name="search" size={20} color={COLORS.textTertiary} />}
+          rightIcon={
+            searchQuery.length > 0 ? (
+              <TouchableOpacity onPress={() => setSearchQuery("")}>
+                <Ionicons name="close-circle" size={18} color={COLORS.textTertiary} />
+              </TouchableOpacity>
+            ) : undefined
           }
         />
-      </View>
+      )}
+
+      {/* List */}
+      <FlatList
+        data={filteredOptions}
+        keyExtractor={(item, index) => {
+          const val = typeof item === "string" ? item : item.value;
+          return `${val}-${index}`;
+        }}
+        renderItem={renderItem}
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        initialNumToRender={15}
+        maxToRenderPerBatch={20}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>
+              No se encontraron resultados
+            </Text>
+          </View>
+        }
+      />
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -141,7 +147,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.cardBorder,
   },
   kavWrapper: {
-    flex: 1,
+    flexGrow: 1,
+    minHeight: SCREEN_HEIGHT * 0.4,
   },
   searchContainer: {
     margin: 16,

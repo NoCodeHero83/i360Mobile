@@ -189,10 +189,11 @@ async function fetchReels(q: string): Promise<SearchReel[]> {
 }
 
 async function fetchProperties(q: string): Promise<SearchProperty[]> {
+  const plain = q.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const { data } = await supabase
     .from("propiedades")
     .select("id, codigo_propiedad, fotos, colonia, municipio, estado, habitaciones, banos, metros_cuadrados_construccion, metros_cuadrados_terreno, operaciones_propiedad(precio, moneda)")
-    .or(`codigo_propiedad.ilike.%${q}%,unaccent(colonia).ilike.unaccent('%${q}%'),unaccent(municipio).ilike.unaccent('%${q}%')`)
+    .or(`codigo_propiedad.ilike.%${plain}%,unaccent(colonia).ilike.%${plain}%,unaccent(municipio).ilike.%${plain}%`)
     .is("deleted_at", null)
     .limit(20);
 

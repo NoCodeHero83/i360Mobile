@@ -77,7 +77,8 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
   const sessionTokenRef = useRef<string>(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
   const mountedRef = useRef(true);
-  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
+  const focusThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { return () => { mountedRef.current = false; if (focusThrottleRef.current) clearTimeout(focusThrottleRef.current); }; }, []);
 
   const [focusRegion, setFocusRegion] = useState<{
     latitude: number;
@@ -85,7 +86,6 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
     latitudeDelta: number;
     longitudeDelta: number;
   } | null>(null);
-  const focusThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFocusRef = useRef<typeof focusRegion>(null);
   const setFocusRegionThrottled = useCallback((region: typeof focusRegion) => {
     lastFocusRef.current = region;

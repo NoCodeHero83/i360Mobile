@@ -76,6 +76,9 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
   // Token de sesión para Places API (se reutiliza entre búsqueda y selección)
   const sessionTokenRef = useRef<string>(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
 
+  const mountedRef = useRef(true);
+  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
+
   const [focusRegion, setFocusRegion] = useState<{
     latitude: number;
     longitude: number;
@@ -260,6 +263,7 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
   };
 
   const handleAddLocationChip = async (loc: LocationSuggestionWithCount) => {
+    if (!mountedRef.current) return;
     if (Platform.OS !== "web") Haptics.selectionAsync();
     closeZoneSearch();
 
@@ -268,6 +272,7 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
     try {
       if (loc.placeId) {
         const details = await getPlaceDetails(loc.placeId, sessionTokenRef.current);
+        if (!mountedRef.current) return;
         // Refrescar token después de completar la sesión
         sessionTokenRef.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         if (details?.bounds) {

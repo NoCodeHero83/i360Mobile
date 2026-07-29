@@ -185,16 +185,26 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
           combined = [...enriched, ...nonDuplicated];
         }
       }
+      // Score textual: priorizar coincidencia exacta, empieza con, contiene
+      const q = searchTerm.toLowerCase();
+      const withScore = combined.map((s) => {
+        const name = s.name.toLowerCase();
+        const score = name === q ? 0
+          : name.startsWith(q) ? 1
+          : name.includes(q) ? 2
+          : 3;
+        return { ...s, _score: score };
+      });
       const ranked = effectiveEstado
         ? [
-            ...combined.filter(
+            ...withScore.filter(
               (s) => s.estado_nombre?.toLowerCase() === effectiveEstado.toLowerCase(),
-            ),
-            ...combined.filter(
+            ).sort((a, b) => a._score - b._score),
+            ...withScore.filter(
               (s) => s.estado_nombre?.toLowerCase() !== effectiveEstado.toLowerCase(),
-            ),
+            ).sort((a, b) => a._score - b._score),
           ]
-        : combined;
+        : withScore.sort((a, b) => a._score - b._score);
 
       // Mostrar las sugerencias de inmediato (y quitar el spinner); el conteo
       // se rellena después sin bloquear la UI.

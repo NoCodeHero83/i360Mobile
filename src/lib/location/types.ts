@@ -83,6 +83,13 @@ export interface CountryConfig {
   level1Coords: Record<string, LatLng>;
   /** Normaliza el nombre de una división de nivel 1 a su forma canónica. */
   normalizeLevel1: (name: string) => string;
+  /**
+   * Abreviaturas que Google usa para el nivel 1 en `secondary_text` de Places
+   * Autocomplete (ej. MX: "Ags." → "Aguascalientes"), típicamente cuando el
+   * nivel 1 y el nivel 2 comparten nombre y Google agrega la abreviatura para
+   * desambiguar. Clave en minúsculas sin acentos. Opcional por país.
+   */
+  stateAbbreviations?: Record<string, string>;
   /** Mapea address_components de Google a los niveles neutrales. */
   mapGoogleComponents: (components: GoogleAddressComponent[]) => MappedComponents;
 }

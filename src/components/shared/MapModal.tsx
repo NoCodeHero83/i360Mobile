@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -43,14 +43,41 @@ export const MapModal: React.FC<MapModalProps> = ({
     .filter(Boolean)
     .join(", ");
 
+  // El MapView solo se monta cuando el modal ya quedó ABIERTO. Los hijos de un
+  // <Modal> de RN se montan aunque visible=false, así que sin este guard cada
+  // PropertyCard de la lista instanciaba un mapa de Apple en segundo plano.
+  // Además, se espera un instante tras `visible` para montar el mapa sobre un
+  // layout ya animado (evita que Apple Maps se inicialice a media animación).
+  const [mapMounted, setMapMounted] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      closeTimer.current = setTimeout(() => setMapMounted(true), 250);
+    } else {
+      setMapMounted(false);
+    }
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    };
+  }, [visible]);
+
+  const handleClose = () => {
+    // Desmontar el mapa ANTES de cerrar el modal: cerrar con el MapView aún
+    // montado (Apple Maps en iOS) puede crashear. Un frame después se cierra.
+    setMapMounted(false);
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    requestAnimationFrame(onClose);
+  };
+
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
-      <TouchableWithoutFeedback onPress={onClose}>
+      <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback>
             <View style={styles.modalContent}>
@@ -61,19 +88,13 @@ export const MapModal: React.FC<MapModalProps> = ({
                     Ubicación de la Propiedad
                   </Text>
                 </View>
-                <Pressable onPress={onClose} style={styles.closeButton}>
+                <Pressable onPress={handleClose} style={styles.closeButton}>
                   <Ionicons name="close" size={24} color={COLORS.textPrimary} />
                 </Pressable>
               </View>
 
               <View style={styles.mapWrapper}>
-                {/* El MapView (Apple Maps en iOS) solo se monta cuando el modal
-                    está ABIERTO. Los hijos de un <Modal> de RN se montan aunque
-                    visible=false, así que sin este guard CADA PropertyCard de la
-                    lista instanciaba un mapa de Apple en segundo plano —
-                    carísimo en iPhone y causa de la lentitud al abrir listas con
-                    muchas tarjetas. Al abrir el modal se monta al instante. */}
-                {hasCoords && visible ? (
+                {hasCoords && mapMounted ? (
                   <MapDetails
                     property={property}
                     containerStyle={{

@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  InteractionManager,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { COLORS } from "../../constants/colors";
@@ -89,10 +90,14 @@ const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
     if (downloading) return;
     setDownloading(true);
     try {
-      const result = await pdfService.generateAndOpenPropertyPdf(
-        propertyId,
-        includeAllData,
-      );
+      // Se genera el PDF con InteractionManager: la generación es pesada
+      // (descarga de imágenes, armado del documento) y, si se ejecuta mientras
+      // el modal cierra su animación, puede congelar el hilo de UI (o crashear
+      // en Android con "script executed too long"). Se difiere hasta que las
+      // interacciones/animaciones pendientes terminen.
+      const result = (await InteractionManager.runAfterInteractions(() =>
+        pdfService.generateAndOpenPropertyPdf(propertyId, includeAllData),
+      )) as { filePath: string; opened: boolean } | null;
 
       if (!result?.opened && result?.filePath) {
         showToast("PDF generado correctamente", "success");

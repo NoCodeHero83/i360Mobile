@@ -256,12 +256,19 @@ export const usePropertyFiltersStore = create<PropertyFiltersState>(
       })),
 
     removeLocationChip: (id) =>
-      set((state) => ({
-        filters: {
-          ...state.filters,
-          locationChips: state.filters.locationChips.filter((c) => c.id !== id),
-        },
-      })),
+      set((state) => {
+        const locationChips = state.filters.locationChips.filter((c) => c.id !== id);
+        return {
+          filters: {
+            ...state.filters,
+            locationChips,
+            locationFilter:
+              locationChips.length === 0
+                ? initialFilters.locationFilter
+                : state.filters.locationFilter,
+          },
+        };
+      }),
 
     clearLocationChips: () =>
       set((state) => ({
@@ -272,7 +279,7 @@ export const usePropertyFiltersStore = create<PropertyFiltersState>(
       set((state) => ({
         filters: {
           ...initialFilters,
-          locationFilter: newLocationFilter || state.filters.locationFilter,
+          locationFilter: newLocationFilter ?? initialFilters.locationFilter,
         },
       })),
 

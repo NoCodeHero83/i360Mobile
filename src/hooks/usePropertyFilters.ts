@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { Property } from "@/types";
 import { useExchangeRate } from "./useExchangeRate";
 import { normalizeStr } from "@/utils/stringNormalizer";
@@ -8,6 +8,9 @@ import {
   PolygonCoord,
   LocationChip,
 } from "@/store/propertyFiltersStore";
+import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
+import { logger } from "@/utils/logger";
 
 type RawOperacion = {
   tipo_operacion: string | null;
@@ -156,11 +159,14 @@ function chipTextMatch(
   return false;
 }
 
+const log = logger.scoped("usePropertyFilters");
+
 export const usePropertyFilters = (
   properties: Property[],
   geofenceBounds?: GeofenceBounds | null,
 ) => {
   const { convertPrice } = useExchangeRate();
+  const { user } = useAuth();
 
   const {
     filters,
@@ -557,6 +563,42 @@ export const usePropertyFilters = (
         ? filters.locationFilter.colonia.length > 0
         : filters.locationFilter.colonia)
     );
+
+  useEffect(() => {
+    if (filters.polygons.length === 0) return;
+    const usuarioId = user?.id;
+    if (!usuarioId) return;
+
+    const payload = {
+      polygons: filters.polygons,
+      locationChips: filters.locationChips,
+      locationFilter: filters.locationFilter,
+      resultCount: filteredProperties.length,
+      properties: filteredProperties.map((p) => ({
+        id: p.id,
+        colonia: (p as any).colonia,
+        municipio: (p as any).municipio,
+        lat: p.coordinates?.lat ?? (p as any).latitud,
+        lng: p.coordinates?.lng ?? (p as any).longitud,
+      })),
+    };
+
+    supabase
+      .from("debug_logs")
+      .insert({
+        usuario_id: usuarioId,
+        contexto: "polygon_filter",
+        payload,
+      })
+      .then(
+        ({ error }) => {
+          if (error) log.warn("[debug_logs] insert falló:", error);
+        },
+        (e) => {
+          log.warn("[debug_logs] insert falló:", e);
+        },
+      );
+  }, [filteredProperties, filters.polygons]);
 
   return {
     filters,

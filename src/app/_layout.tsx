@@ -36,6 +36,8 @@ import { InitialLoading } from "@/components/common/InitialLoading";
 import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { useOTAUpdates } from "@/hooks/useOTAUpdates";
 import { VersionUpdateModal } from "@/components/modals/VersionUpdateModal";
+import { supabase } from "@/lib/supabase";
+import { logger } from "@/utils/logger";
 
 // Ignore common warnings that do not affect functionality
 LogBox.ignoreLogs([
@@ -44,6 +46,49 @@ LogBox.ignoreLogs([
   "TNodeChildrenRenderer",
   "TRenderEngineProvider",
 ]);
+
+/**
+ * Handler global de errores JS no capturados (D.3).
+ *
+ * Registra el crash en `debug_logs` (contexto='crash') para poder diagnosticar
+ * en producción qué está tumbando la app. Se registra a nivel de módulo: si un
+ * error explota después de este punto, ya está cubierto.
+ *
+ * LIMITACIONES (documentadas):
+ * - Solo captura errores de JS que llegan a ErrorUtils; NO crashes nativos
+ *   (Swift/Kotlin), que se salen del runtime JS y no pasan por aquí.
+ * - El insert es fire-and-forget: si el crash es fatal, el network request
+ *   puede no llegar a enviarse antes de que cierre la app.
+ * - Se conserva el handler original (muestra la pantalla de error del sistema).
+ */
+if (typeof ErrorUtils !== "undefined") {
+  const defaultErrorHandler = ErrorUtils.getGlobalHandler();
+  ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
+    try {
+      supabase
+        .from("debug_logs")
+        .insert({
+          contexto: "crash",
+          payload: {
+            mensaje: error?.message ? String(error.message) : String(error),
+            isFatal: !!isFatal,
+            stack: error?.stack ? String(error.stack) : null,
+          },
+        })
+        .then(
+          ({ error: e }) => {
+            if (e) logger.warn("[crash] no se pudo guardar en debug_logs:", e);
+          },
+          (e) => {
+            logger.warn("[crash] no se pudo guardar en debug_logs:", e);
+          },
+        );
+    } catch (e) {
+      logger.warn("[crash] fallo al registrar el crash:", e);
+    }
+    defaultErrorHandler(error, isFatal);
+  });
+}
 
 /**
  * Decide a dónde navegar cuando el usuario toca una notificación push.
@@ -104,7 +149,13 @@ function buildNotificationNavigation(
       return () => router.push("/(tabs)/profile");
 
     default:
-      if (data.type === "recordar_filtros") return () => router.navigate("/(stack)/map");
+      if (data.type === "recordar_filtros") {
+        return () =>
+          router.navigate({
+            pathname: "/(stack)/map",
+            params: data.busqueda_id ? { busquedaId: String(data.busqueda_id) } : {},
+          });
+      }
       return null;
   }
 }

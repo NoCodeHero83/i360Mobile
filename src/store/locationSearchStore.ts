@@ -16,6 +16,15 @@ import { logger } from "@/utils/logger";
 
 const log = logger.scoped("locationSearchStore");
 
+/**
+ * Contador global de solicitudes de búsqueda en vuelo. Cada llamada a
+ * `searchLocations` toma un id nuevo; cualquier `set` de una llamada anterior
+ * (su respuesta llegó tarde) se descarta. Sin esto, escribir "Zon" y luego
+ * "Zona Centro" dejaba que la respuesta lenta de "Zon" pisara la de
+ * "Zona Centro" (sugerencias e isLoading fuera de sincronía).
+ */
+let latestSearchRequestId = 0;
+
 /** Sugerencia de ubicación enriquecida para mostrar en la UI */
 export interface LocationSuggestionWithCount extends LocationSuggestion {
   /** Conteo de propiedades (no calculado en la nueva versión) */
@@ -91,13 +100,37 @@ function extractMunicipioEstado(
   if (suggestion.type === "municipio") {
     const municipio_nombre =
       parts.length >= 2 ? parts[parts.length - 2] : undefined;
-    return { municipio_nombre, estado_nombre };
+    return { municipio_nombre, estado_nombre: normalizeStateAbbrev(estado_nombre, config) };
   }
 
   // colonia (nivel 3)
   const municipio_nombre =
     parts.length >= 2 ? parts[parts.length - 2] : undefined;
-  return { municipio_nombre, estado_nombre };
+  return { municipio_nombre, estado_nombre: normalizeStateAbbrev(estado_nombre, config) };
+}
+
+/**
+ * Resuelve abreviaturas de estado que Google agrega en `secondary_text` cuando
+ * el municipio comparte nombre con su estado (ej. "Aguascalientes, Ags.,
+ * México" en vez de repetir "Aguascalientes"). Sin esto, `estado_nombre`
+ * queda como "Ags." literal y nunca matchea contra `effectiveEstado`
+ * ("Aguascalientes"), así que el re-rank geográfico descarta el resultado
+ * como "no local" — justo el caso donde el municipio y el estado son el mismo
+ * nombre, es decir, la capital del estado, que suele ser lo más buscado.
+ */
+function normalizeStateAbbrev(
+  value: string,
+  config: ReturnType<typeof getCountryConfig>,
+): string {
+  const map = config.stateAbbreviations;
+  if (!map) return value;
+  const key = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .trim();
+  return map[key] ?? value;
 }
 
 export const useLocationSearchStore = create<LocationSearchState>((set, get) => ({
@@ -114,6 +147,10 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
     country: CountryCode = DEFAULT_COUNTRY,
     opts?: { restrictToRegions?: boolean; withCounts?: boolean; estado?: string },
   ) => {
+    // Se toma ANTES de cualquier await: una búsqueda nueva deja obsoleta a la
+    // anterior en el acto (aunque su respuesta llegue después).
+    const requestId = ++latestSearchRequestId;
+
     if (!searchTerm.trim()) {
       set({ suggestions: [] });
       return;
@@ -155,6 +192,9 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
         biasCoords ? 100000 : undefined,
       );
 
+      // Respuesta obsoleta (se escribió más mientras esta volaba): se descarta.
+      if (requestId !== latestSearchRequestId) return;
+
       const enriched: LocationSuggestionWithCount[] = results.map((loc) => ({
         ...loc,
         ...extractMunicipioEstado(loc, country),
@@ -176,6 +216,7 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
           const fallbackResults = await searchLocations(
             fallbackSearchTerm, 5, sessionToken, country, "(regions)",
           );
+          if (requestId !== latestSearchRequestId) return;
           const fallbackEnriched = fallbackResults.map((loc) => ({
             ...loc,
             ...extractMunicipioEstado(loc, country),
@@ -197,15 +238,18 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
           : 3;
         return { ...s, _score: score };
       });
+      // La pertenencia geográfica es el criterio PRINCIPAL (partición
+      // dura), el score de texto ordena dentro de cada grupo. Así los
+      // resultados del estado del usuario quedan TODOS agrupados antes que
+      // los de fuera (nunca intercalados), y un match exacto de texto fuera
+      // del estado ya no le gana a un resultado local (caso "Rosello").
       const ranked = withScore.sort((a, b) => {
-        const scoreDiff = a._score - b._score;
-        if (scoreDiff !== 0) return scoreDiff;
         if (effectiveEstado) {
           const aLocal = a.estado_nombre?.toLowerCase() === effectiveEstado.toLowerCase();
           const bLocal = b.estado_nombre?.toLowerCase() === effectiveEstado.toLowerCase();
           if (aLocal !== bLocal) return aLocal ? -1 : 1;
         }
-        return 0;
+        return a._score - b._score;
       });
 
       // Mostrar las sugerencias de inmediato (y quitar el spinner); el conteo
@@ -235,6 +279,7 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
             "contar_propiedades_zonas",
             { p_zonas: zonas, p_pais: country },
           );
+          if (requestId !== latestSearchRequestId) return;
           if (Array.isArray(counts) && counts.length > 0) {
             const countMap = new Map<string, number>(
               counts.map((c: {
@@ -260,10 +305,11 @@ export const useLocationSearchStore = create<LocationSearchState>((set, get) => 
         }
       }
     } catch (error) {
+      if (requestId !== latestSearchRequestId) return;
       log.error("Error fetching location suggestions:", error);
       set({ suggestions: [] });
     } finally {
-      set({ isLoading: false });
+      if (requestId === latestSearchRequestId) set({ isLoading: false });
     }
   },
 }));

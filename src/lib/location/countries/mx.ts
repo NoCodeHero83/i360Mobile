@@ -86,6 +86,55 @@ export const COORDENADAS_ESTADO_MX: Record<string, LatLng> = {
   Zacatecas: { lat: 22.7709, lng: -102.5832 },
 };
 
+/**
+ * Abreviaturas que Google agrega en `secondary_text` de Places Autocomplete
+ * cuando el municipio comparte nombre con su estado (ej. "Aguascalientes,
+ * Ags., México" en vez de "Aguascalientes, Aguascalientes, México") — Google
+ * desambigua sustituyendo el estado por su abreviatura en vez de repetir el
+ * nombre. Sin este mapeo, `extractMunicipioEstado` toma "Ags." como
+ * `estado_nombre` literal y el re-rank geográfico lo descarta como "no local"
+ * aunque sea exactamente el resultado que se busca.
+ * Clave en minúsculas, sin punto final (se hace strip antes de comparar).
+ */
+export const ESTADO_ABREVIATURAS_MX: Record<string, string> = {
+  ags: "Aguascalientes",
+  bc: "Baja California",
+  bcs: "Baja California Sur",
+  camp: "Campeche",
+  chis: "Chiapas",
+  chih: "Chihuahua",
+  cdmx: "Ciudad de México (CDMX)",
+  df: "Ciudad de México (CDMX)",
+  coah: "Coahuila de Zaragoza",
+  col: "Colima",
+  dgo: "Durango",
+  "méx": "Estado de México",
+  mex: "Estado de México",
+  edomex: "Estado de México",
+  gto: "Guanajuato",
+  gro: "Guerrero",
+  hgo: "Hidalgo",
+  jal: "Jalisco",
+  mich: "Michoacán de Ocampo",
+  mor: "Morelos",
+  nay: "Nayarit",
+  nl: "Nuevo León",
+  oax: "Oaxaca",
+  pue: "Puebla",
+  qro: "Querétaro",
+  qroo: "Quintana Roo",
+  qr: "Quintana Roo",
+  slp: "San Luis Potosí",
+  sin: "Sinaloa",
+  son: "Sonora",
+  tab: "Tabasco",
+  tamps: "Tamaulipas",
+  tlax: "Tlaxcala",
+  ver: "Veracruz de Ignacio de la Llave",
+  yuc: "Yucatán",
+  zac: "Zacatecas",
+};
+
 /** Normalización de nombres de estado (Google → nomenclatura interna). */
 const STATE_NORMALIZATION: Record<string, string> = {
   "Ciudad de México": "CDMX",
@@ -166,5 +215,6 @@ export const MX_CONFIG: CountryConfig = {
   level1Options: ESTADOS_MX,
   level1Coords: COORDENADAS_ESTADO_MX,
   normalizeLevel1,
+  stateAbbreviations: ESTADO_ABREVIATURAS_MX,
   mapGoogleComponents,
 };

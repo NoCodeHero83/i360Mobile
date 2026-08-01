@@ -31,7 +31,11 @@ export function useShare() {
   const generateDeepLink = useCallback(
     (feedItemId: string, type: string, sinDatos?: boolean): string => {
       // URL base
-      const baseUrl = "https://ilyrox-posts.vercel.app/";
+      // TODO(C.2): apuntar a posts.ilyrox.com cuando el dominio resuelva.
+      // NO fusionar/desplegar esta rama (feature/posts-domain) hasta que el DNS
+      // de posts.ilyrox.com apunte al proyecto Vercel de ilyrox-posts; si se
+      // despliega antes, los links compartidos apuntarán a un dominio muerto.
+      const baseUrl = "https://posts.ilyrox.com/";
 
       let url = `${baseUrl}?type=${type}&id=${feedItemId}`;
       if (sinDatos) {

@@ -13,6 +13,7 @@ import { pdfService } from "../../services/pdfService";
 import { useShare } from "../../hooks";
 import { Modal } from "@/design-system/components";
 import { useToast } from "../../context/ToastContext";
+import { useAuth } from "@/context/AuthContext";
 import { logger } from "@/utils/logger";
 
 const log = logger.scoped("ShareContentModal");
@@ -47,6 +48,7 @@ const ShareContentModal: React.FC<ShareContentModalProps> = ({
 
   const { shareContent } = useShare();
   const { showToast } = useToast();
+  const { user } = useAuth();
 
   const isProperty = feedItemType === "property";
   const shareButtonLabel = isProperty
@@ -97,7 +99,7 @@ const ShareContentModal: React.FC<ShareContentModalProps> = ({
       // en Android con "script executed too long"). Se difiere hasta que las
       // interacciones/animaciones pendientes terminen.
       const result = (await InteractionManager.runAfterInteractions(() =>
-        pdfService.generateAndOpenPropertyPdf(contentId, includeAllData),
+        pdfService.generateAndOpenPropertyPdf(contentId, includeAllData, user?.id),
       )) as { filePath: string; opened: boolean } | null;
 
       if (!result?.opened && result?.filePath) {

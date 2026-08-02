@@ -26,7 +26,7 @@ interface ShareOptions {
 }
 
 export function useShare() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   /**
    * Generar deep link para el contenido
@@ -62,7 +62,6 @@ export function useShare() {
         feedItemId,
         shareId,
         type,
-        title,
         description,
         sinDatos,
       } = options;
@@ -76,6 +75,24 @@ export function useShare() {
           user?.id,
         );
 
+        // Título con el nombre de quien comparte (no el creador original
+        // del contenido) — mismo patrón de nombre usado en el resto de la
+        // app: nombre + apellido paterno, con fallback a "Alguien" si el
+        // perfil no cargó todavía por alguna razón.
+        const sharerName =
+          profile?.nombre && profile?.apellido_paterno
+            ? `${profile.nombre} ${profile.apellido_paterno}`
+            : profile?.nombre || "Alguien";
+
+        const typeLabel =
+          type === "property"
+            ? "esta propiedad"
+            : type === "reel"
+              ? "este reel"
+              : "esta búsqueda";
+
+        const finalTitle = `${sharerName} quiere compartir ${typeLabel} contigo`;
+
         // 2. Mensaje para compartir.
         // En iOS, el link va SOLO en `url` (el campo nativo correcto para
         // esto) — no se repite dentro de `message`, porque iOS concatena
@@ -85,14 +102,14 @@ export function useShare() {
         // embebido en el mensaje.
         const message =
           Platform.OS === "ios"
-            ? `${title}\n\n${description}`
-            : `${title}\n\n${description}\n\n${deepLink}`;
+            ? `${finalTitle}\n\n${description}`
+            : `${finalTitle}\n\n${description}\n\n${deepLink}`;
 
         // 3. Compartir (nativo)
         const result = await Share.share({
           message,
           url: Platform.OS === "ios" ? deepLink : undefined,
-          title,
+          title: finalTitle,
         });
 
         // 4. Registrar share en BD: incrementa compartidos_count vía RPC
@@ -113,7 +130,7 @@ export function useShare() {
         return false;
       }
     },
-    [generateDeepLink, user],
+    [generateDeepLink, user, profile],
   );
 
   /**

@@ -932,16 +932,39 @@ export const pdfService = {
    * Genera y abre un PDF con todos los datos de la propiedad
    * @param propertyId - ID de la propiedad
    * @param includeAllData - Si es true, incluye todos los datos. Si es false, usa PDF_SIN_DATOS_OVERRIDE
+   * @param sharerId - Si viene y includeAllData es true, el PDF muestra los
+   *                   datos de quien lo comparte (sharerId), no del creador
+   *                   original de la propiedad. En modo "sin datos" nunca se
+   *                   busca ni se muestra ningún perfil.
    */
   async generateAndOpenPropertyPdf(
     propertyId: string,
     includeAllData: boolean = true,
+    sharerId?: string,
   ): Promise<{ filePath: string; opened: boolean }> {
     // Obtener datos de la propiedad
     const propertyData = await fetchPropertyData(propertyId);
 
     if (!propertyData) {
       throw new Error("No se pudieron obtener los datos de la propiedad");
+    }
+
+    // Misma prioridad que en la web: si se está compartiendo (sharerId) y el
+    // modo incluye todos los datos, el PDF muestra el perfil de quien
+    // comparte en lugar del creador original. En modo "sin datos" no se
+    // busca ni se muestra ningún perfil (el HTML ya usa el footer genérico).
+    if (sharerId && includeAllData) {
+      const { data: sharerProfile, error: sharerError } = await supabase
+        .from("perfiles")
+        .select("*")
+        .eq("id", sharerId)
+        .single();
+
+      if (!sharerError && sharerProfile) {
+        propertyData.perfil = sharerProfile as unknown as PerfilCreador;
+      } else if (sharerError) {
+        log.warn("No se pudo cargar el perfil de quien comparte:", sharerError);
+      }
     }
 
     // Orientación de la portada: si la primera foto es vertical, la caja de la

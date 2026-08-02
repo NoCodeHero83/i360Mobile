@@ -12,6 +12,7 @@ import { useCallback } from "react";
 import { Share, Platform } from "react-native";
 import { supabase } from "../lib/supabase";
 import * as Linking from "expo-linking";
+import { useAuth } from "@/context/AuthContext";
 import { logger } from "@/utils/logger";const log = logger.scoped("useShare");
 
 interface ShareOptions {
@@ -25,17 +26,27 @@ interface ShareOptions {
 }
 
 export function useShare() {
+  const { user } = useAuth();
+
   /**
    * Generar deep link para el contenido
    */
   const generateDeepLink = useCallback(
-    (feedItemId: string, type: string, sinDatos?: boolean): string => {
+    (
+      feedItemId: string,
+      type: string,
+      sinDatos?: boolean,
+      sharerId?: string,
+    ): string => {
       // URL base (DNS de posts.ilyrox.com confirmado y apuntando a ilyrox-posts)
       const baseUrl = "https://posts.ilyrox.com/";
 
       let url = `${baseUrl}?type=${type}&id=${feedItemId}`;
       if (sinDatos) {
         url += `&sd=1`;
+      }
+      if (sharerId) {
+        url += `&sharedBy=${sharerId}`;
       }
       return url;
     },
@@ -62,10 +73,20 @@ export function useShare() {
           shareId || feedItemId,
           type,
           sinDatos,
+          user?.id,
         );
 
-        // 2. Mensaje para compartir
-        const message = `${title}\n\n${description}\n\n${deepLink}`;
+        // 2. Mensaje para compartir.
+        // En iOS, el link va SOLO en `url` (el campo nativo correcto para
+        // esto) — no se repite dentro de `message`, porque iOS concatena
+        // message + url en varios destinos (Mensajes, Mail, "Copiar"),
+        // duplicando el link. En Android, `url` no se usa (no existe ese
+        // concepto en su share sheet), así que el link debe seguir
+        // embebido en el mensaje.
+        const message =
+          Platform.OS === "ios"
+            ? `${title}\n\n${description}`
+            : `${title}\n\n${description}\n\n${deepLink}`;
 
         // 3. Compartir (nativo)
         const result = await Share.share({
@@ -92,7 +113,7 @@ export function useShare() {
         return false;
       }
     },
-    [generateDeepLink],
+    [generateDeepLink, user],
   );
 
   /**

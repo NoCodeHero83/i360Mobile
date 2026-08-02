@@ -15,20 +15,14 @@ import { Modal } from "@/design-system/components";
 import { useToast } from "../../context/ToastContext";
 import { logger } from "@/utils/logger";
 
-const log = logger.scoped("SharePropertyModal");
+const log = logger.scoped("ShareContentModal");
 
-//////////////////////////////////////
-// URL a futuro:
-// https://ilyroxox.app/property/${propertyId}
-// https://ilyroxox.app/post/${postId}
-// https://ilyroxox0.app/reel/${reelId}
-//////////////////////////////////////
-
-interface SharePropertyModalProps {
+interface ShareContentModalProps {
   visible: boolean;
   onClose: () => void;
-  propertyTitle: string;
-  propertyId: string;
+  feedItemType: "property" | "post" | "reel";
+  contentTitle: string;
+  contentId: string;
   shareCode?: string;
   feedItemId?: string;
   shareDescription?: string;
@@ -36,11 +30,12 @@ interface SharePropertyModalProps {
   onShared?: () => void;
 }
 
-const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
+const ShareContentModal: React.FC<ShareContentModalProps> = ({
   visible,
   onClose,
-  propertyTitle,
-  propertyId,
+  feedItemType,
+  contentTitle,
+  contentId,
   shareCode,
   feedItemId,
   shareDescription,
@@ -53,14 +48,20 @@ const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
   const { shareContent } = useShare();
   const { showToast } = useToast();
 
+  const isProperty = feedItemType === "property";
+  const shareButtonLabel = isProperty
+    ? "Compartir propiedad"
+    : "Compartir publicación";
+
   const handleShare = async () => {
     const success = await shareContent({
-      feedItemId: feedItemId || propertyId,
-      shareId: shareCode || propertyId,
-      type: "property",
-      title: propertyTitle,
+      feedItemId: feedItemId || contentId,
+      shareId: shareCode || contentId,
+      type: feedItemType,
+      title: contentTitle,
       description: shareDescription || "Mira esta propiedad en ilyrox",
       imageUrl: shareImageUrl,
+      sinDatos: activeTab === "sin",
     });
 
     if (success) {
@@ -96,7 +97,7 @@ const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
       // en Android con "script executed too long"). Se difiere hasta que las
       // interacciones/animaciones pendientes terminen.
       const result = (await InteractionManager.runAfterInteractions(() =>
-        pdfService.generateAndOpenPropertyPdf(propertyId, includeAllData),
+        pdfService.generateAndOpenPropertyPdf(contentId, includeAllData),
       )) as { filePath: string; opened: boolean } | null;
 
       if (!result?.opened && result?.filePath) {
@@ -117,7 +118,7 @@ const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
       visible={visible}
       onClose={onClose}
       variant="bottom"
-      title="Compartir Propiedad"
+      title={isProperty ? "Compartir Propiedad" : "Compartir Publicación"}
       contentStyle={styles.container}
     >
       <View style={styles.body}>
@@ -152,8 +153,12 @@ const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
 
         <Text style={styles.tabDescription}>
           {activeTab === "con"
-            ? "Incluye todos los datos de la propiedad e información del agente."
-            : "PDF simplificado sin información de contacto."}
+            ? isProperty
+              ? "Incluye todos los datos de la propiedad e información del agente."
+              : "Incluye todos los datos de la publicación."
+            : isProperty
+              ? "PDF simplificado sin información de contacto."
+              : "Sin información de contacto."}
         </Text>
 
         {activeTab === "con" ? (
@@ -164,59 +169,71 @@ const SharePropertyModal: React.FC<SharePropertyModalProps> = ({
               activeOpacity={0.85}
             >
               <Ionicons name="share-social" size={18} color={COLORS.primary} />
-              <Text style={styles.actionText}>Compartir propiedad</Text>
+              <Text style={styles.actionText}>{shareButtonLabel}</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                downloading && styles.actionBtnDisabled,
-                { marginBottom: 30 },
-              ]}
-              onPress={() => downloadPdf(true)}
-              activeOpacity={0.85}
-              disabled={downloading}
-            >
-              {downloading ? (
-                <>
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                  <Text style={styles.actionText}>Generando PDF...</Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="download" size={18} color={COLORS.primary} />
-                  <Text style={styles.actionText}>
-                    Descargar PDF completo
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {isProperty && (
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  downloading && styles.actionBtnDisabled,
+                  { marginBottom: 30 },
+                ]}
+                onPress={() => downloadPdf(true)}
+                activeOpacity={0.85}
+                disabled={downloading}
+              >
+                {downloading ? (
+                  <>
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <Text style={styles.actionText}>Generando PDF...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="download" size={18} color={COLORS.primary} />
+                    <Text style={styles.actionText}>
+                      Descargar PDF completo
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           <View style={styles.actions}>
             <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                downloading && styles.actionBtnDisabled,
-                { marginBottom: 30 },
-              ]}
-              onPress={() => downloadPdf(false)}
+              style={styles.actionBtn}
+              onPress={handleShare}
               activeOpacity={0.85}
-              disabled={downloading}
             >
-              {downloading ? (
-                <>
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                  <Text style={styles.actionText}>Generando PDF...</Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="download" size={18} color={COLORS.primary} />
-                  <Text style={styles.actionText}>
-                    Descargar PDF simplificado
-                  </Text>
-                </>
-              )}
+              <Ionicons name="share-social" size={18} color={COLORS.primary} />
+              <Text style={styles.actionText}>{shareButtonLabel}</Text>
             </TouchableOpacity>
+            {isProperty && (
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  downloading && styles.actionBtnDisabled,
+                  { marginBottom: 30 },
+                ]}
+                onPress={() => downloadPdf(false)}
+                activeOpacity={0.85}
+                disabled={downloading}
+              >
+                {downloading ? (
+                  <>
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <Text style={styles.actionText}>Generando PDF...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="download" size={18} color={COLORS.primary} />
+                    <Text style={styles.actionText}>
+                      Descargar PDF simplificado
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
@@ -289,4 +306,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default SharePropertyModal;
+export default ShareContentModal;

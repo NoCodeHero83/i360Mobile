@@ -11,13 +11,12 @@ import React, { useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { useToast } from "@/context/ToastContext";
 import { COLORS } from "../constants";
 
 import ReportPropertyModal from "./modals/ReportPropertyModal";
-import SharePropertyModal from "./modals/SharePropertyModal";
+import ShareContentModal from "./modals/ShareContentModal";
 import { useReportProperty } from "@/hooks/useReportProperty";
-import { useLikes, useShare } from "@/hooks";
+import { useLikes } from "@/hooks";
 import { useCommentCount } from "@/hooks/useCommentCount";
 import { useShareCount } from "@/hooks/useShareCount";
 import { propertyService } from "../services/propertyService";
@@ -68,7 +67,6 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
   propertyId,
   shareCode,
 }) => {
-  const { showToast } = useToast();
   // Hook de likes con optimistic updates
   const {
     getCounterReportsProperty,
@@ -124,25 +122,9 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
   });
 
   // Hook de compartir con deep linking
-  const { shareContent } = useShare();
   const [showShareModal, setShowShareModal] = React.useState(false);
   const handleShare = async () => {
-    if (feedItemType === "property") {
-      setShowShareModal(true);
-      return;
-    }
-    const success = await shareContent({
-      feedItemId,
-      shareId: contentId,
-      type: feedItemType,
-      title: shareTitle,
-      description: shareDescription,
-      imageUrl: shareImageUrl,
-    });
-    if (success) {
-      incrementShareCount();
-      showToast("Contenido compartido exitosamente", "success");
-    }
+    setShowShareModal(true);
   };
 
   const handleReport = () => {
@@ -263,12 +245,13 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
           }
         />
       )}
-      {showShareModal && propertyId && (
-        <SharePropertyModal
+      {showShareModal && (
+        <ShareContentModal
           visible={showShareModal}
           onClose={() => setShowShareModal(false)}
-          propertyTitle={firstUpperCase(shareTitle) || "Propiedad"}
-          propertyId={propertyId}
+          feedItemType={feedItemType}
+          contentTitle={firstUpperCase(shareTitle) || "Propiedad"}
+          contentId={contentId || propertyId || feedItemId}
           shareCode={shareCode}
           feedItemId={feedItemId}
           shareDescription={shareDescription}

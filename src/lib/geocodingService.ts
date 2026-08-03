@@ -367,9 +367,25 @@ export function boundsToRegion(
     MAX_DELTA,
   );
 
+  const boundsValid =
+    Number.isFinite(bounds.north) &&
+    Number.isFinite(bounds.south) &&
+    Number.isFinite(bounds.east) &&
+    Number.isFinite(bounds.west);
+
+  // Centro geográfico aproximado de México, como fallback seguro si los
+  // bounds vienen incompletos — evita pasar NaN al MapView nativo, que
+  // puede crashear el SDK del mapa de forma instantánea y silenciosa
+  // (sin pasar por ningún manejador de errores de JS).
+  const FALLBACK_CENTER = { latitude: 23.6345, longitude: -102.5528 };
+
   return {
-    latitude: (bounds.north + bounds.south) / 2,
-    longitude: (bounds.east + bounds.west) / 2,
+    latitude: boundsValid
+      ? (bounds.north + bounds.south) / 2
+      : FALLBACK_CENTER.latitude,
+    longitude: boundsValid
+      ? (bounds.east + bounds.west) / 2
+      : FALLBACK_CENTER.longitude,
     latitudeDelta,
     longitudeDelta,
   };

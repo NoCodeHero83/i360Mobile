@@ -65,7 +65,13 @@ const ShareContentModal: React.FC<ShareContentModalProps> = ({
     // al mismo tiempo — sin importar si el usuario cancela o completa el
     // share. Cerrando primero, esa superposición deja de ser posible.
     onClose();
-    InteractionManager.runAfterInteractions(async () => {
+    // NO usar InteractionManager aquí: depende de que el Modal reporte el
+    // fin de su animación de cierre, y en la práctica se queda esperando
+    // indefinidamente cuando se invoca justo después de onClose() (a
+    // diferencia de downloadPdf, que lo llama ANTES de cerrar, sin ese
+    // problema). Un timeout fijo es menos elegante pero garantiza que el
+    // share sí se ejecute.
+    setTimeout(async () => {
       const success = await shareContent({
         feedItemId: feedItemId || contentId,
         shareId: shareCode || contentId,
@@ -78,7 +84,7 @@ const ShareContentModal: React.FC<ShareContentModalProps> = ({
       if (success) {
         onShared?.();
       }
-    });
+    }, 350);
   };
 
   /**

@@ -224,7 +224,17 @@ const PostCard: React.FC<PostCardProps> = ({
               onCommentClick();
             }}
             onTrackInteraction={trackInteraction}
-            shareTitle={`Post de ${item.user.nombre || item.user.name}`}
+            shareTitle={
+              item.propertyDetails?.title ||
+              (item.postDetails?.busquedas_json?.filtros?.tipo_propiedad
+                ? `Se busca ${item.postDetails.busquedas_json.filtros.tipo_propiedad} en ${
+                    item.postDetails.busquedas_json.filtros.ubicacion?.ciudad ||
+                    item.postDetails.busquedas_json.filtros.ubicacion?.municipio ||
+                    item.postDetails.busquedas_json.filtros.ubicacion?.estado ||
+                    ""
+                  }`.trim()
+                : "Búsqueda de propiedad en Ilyrox")
+            }
             shareDescription={item.content.substring(0, 100)}
             shareImageUrl={hasImages ? images[0] : undefined}
             orientation="horizontal"

@@ -55,28 +55,30 @@ const ShareContentModal: React.FC<ShareContentModalProps> = ({
     ? "Compartir propiedad"
     : "Compartir publicación";
 
-  const handleShare = async () => {
-    const success = await shareContent({
-      feedItemId: feedItemId || contentId,
-      shareId: shareCode || contentId,
-      type: feedItemType,
-      title: contentTitle,
-      description: shareDescription || "Mira esta propiedad en ilyrox",
-      imageUrl: shareImageUrl,
-      sinDatos: activeTab === "sin",
-    });
-
-    if (success) {
-      onShared?.();
-      // Mismo motivo que en downloadPdf: Share.share() puede resolver
-      // mientras la hoja nativa (WhatsApp, Mensajes, etc.) todavía está
-      // animando su cierre — sobre todo al cancelar rápido. Cerrar este
-      // modal en el mismo tick solapa dos transiciones nativas y congela
-      // la app.
-      InteractionManager.runAfterInteractions(() => {
-        onClose();
+  const handleShare = () => {
+    // Se cierra el modal propio ANTES de invocar el share nativo, no
+    // después. El fix anterior (cerrar tras Share.share()) no cubría el
+    // caso de cancelar, porque shareContent() devuelve `false` al
+    // cancelar y ese código nunca llegaba a ejecutarse en ese escenario.
+    // La causa real es estructural: nunca debe haber dos presentaciones
+    // nativas superpuestas (este bottom-sheet + la hoja de WhatsApp/iOS)
+    // al mismo tiempo — sin importar si el usuario cancela o completa el
+    // share. Cerrando primero, esa superposición deja de ser posible.
+    onClose();
+    InteractionManager.runAfterInteractions(async () => {
+      const success = await shareContent({
+        feedItemId: feedItemId || contentId,
+        shareId: shareCode || contentId,
+        type: feedItemType,
+        title: contentTitle,
+        description: shareDescription || "Mira esta propiedad en ilyrox",
+        imageUrl: shareImageUrl,
+        sinDatos: activeTab === "sin",
       });
-    }
+      if (success) {
+        onShared?.();
+      }
+    });
   };
 
   /**

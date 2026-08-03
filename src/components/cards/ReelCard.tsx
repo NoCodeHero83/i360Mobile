@@ -216,7 +216,7 @@ const ReelCard: React.FC<ReelCardProps> = ({
             onCommentClick();
           }}
           onTrackInteraction={trackInteraction}
-          shareTitle={`Reel de ${item.user.nombre || item.user.name}`}
+          shareTitle={"Mira este reel"}
           shareDescription={item.content || "Mira este reel"}
           orientation="horizontal"
           contentId={item.reelDetails?.id}

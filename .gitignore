@@ -37,6 +37,9 @@ functionSQLGeo.sql
 # Código archivado (fuera del árbol de compilación)
 _archive/
 
+# Archivos comprimidos sueltos
+*.zip
+
 # Secrets / credentials (nunca subir a git)
 secrets/
 *.p8

@@ -68,7 +68,14 @@ const ShareContentModal: React.FC<ShareContentModalProps> = ({
 
     if (success) {
       onShared?.();
-      onClose();
+      // Mismo motivo que en downloadPdf: Share.share() puede resolver
+      // mientras la hoja nativa (WhatsApp, Mensajes, etc.) todavía está
+      // animando su cierre — sobre todo al cancelar rápido. Cerrar este
+      // modal en el mismo tick solapa dos transiciones nativas y congela
+      // la app.
+      InteractionManager.runAfterInteractions(() => {
+        onClose();
+      });
     }
   };
 

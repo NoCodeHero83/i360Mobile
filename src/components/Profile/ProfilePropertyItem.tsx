@@ -132,7 +132,7 @@ const ProfilePropertyItem: React.FC<ProfilePropertyItemProps> = React.memo(
                 </Text>
               </View>
             )}
-            {item.features.baths > 0 && (
+            {(item.features.baths > 0 || (item.features.halfBaths ?? 0) > 0) && (
               <View
                 style={{
                   ...styles.featureBadge,
@@ -144,21 +144,7 @@ const ProfilePropertyItem: React.FC<ProfilePropertyItemProps> = React.memo(
                 <Bath size={10} color={COLORS.textPrimary} />
                 <Text style={styles.featureBadgeText}>
                   {item.features.baths}
-                </Text>
-              </View>
-            )}
-            {((item.features.halfBaths ?? 0) > 0) && (
-              <View
-                style={{
-                  ...styles.featureBadge,
-                  borderRightWidth: 1,
-                  paddingRight: 5,
-                  borderRightColor: "#cccccc",
-                }}
-              >
-                <Bath size={10} color={COLORS.textPrimary} />
-                <Text style={styles.featureBadgeText}>
-                  {item.features.halfBaths ?? 0}½
+                  {(item.features.halfBaths ?? 0) > 0 ? "½" : ""}
                 </Text>
               </View>
             )}

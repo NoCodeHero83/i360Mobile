@@ -101,7 +101,14 @@ const FeedDetail: React.FC<FeedDetailProps> = ({
               onCommentClick={() => setShowComments(true)}
               shareTitle={
                 item.propertyDetails?.title ||
-                `Post de ${item.user.nombre || item.user.name}`
+                (item.postDetails?.busquedas_json?.filtros?.tipo_propiedad
+                  ? `Se busca ${item.postDetails.busquedas_json.filtros.tipo_propiedad} en ${
+                      item.postDetails.busquedas_json.filtros.ubicacion?.ciudad ||
+                      item.postDetails.busquedas_json.filtros.ubicacion?.municipio ||
+                      item.postDetails.busquedas_json.filtros.ubicacion?.estado ||
+                      ""
+                    }`.trim()
+                  : "Búsqueda de propiedad en Ilyrox")
               }
               shareDescription={item.content.substring(0, 100)}
               shareImageUrl={images[0]}
@@ -250,7 +257,17 @@ const FeedDetail: React.FC<FeedDetailProps> = ({
                 comments={item.comments}
                 userId={currentUserId}
                 onCommentClick={() => setShowComments(true)}
-                shareTitle={`Post de ${item.user.nombre || item.user.name}`}
+                shareTitle={
+                  item.propertyDetails?.title ||
+                  (item.postDetails?.busquedas_json?.filtros?.tipo_propiedad
+                    ? `Se busca ${item.postDetails.busquedas_json.filtros.tipo_propiedad} en ${
+                        item.postDetails.busquedas_json.filtros.ubicacion?.ciudad ||
+                        item.postDetails.busquedas_json.filtros.ubicacion?.municipio ||
+                        item.postDetails.busquedas_json.filtros.ubicacion?.estado ||
+                        ""
+                      }`.trim()
+                    : "Búsqueda de propiedad en Ilyrox")
+                }
                 shareDescription={item.content.substring(0, 100)}
                 showContactButton={false}
                 authorId={item.user.id}

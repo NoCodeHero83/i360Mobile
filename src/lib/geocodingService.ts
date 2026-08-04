@@ -343,6 +343,37 @@ export function parseAddressComponents(
  * @param bounds  Bounding box del lugar
  * @param type    Tipo de lugar (ajusta los deltas mínimos)
  */
+/**
+ * Calcula el centro de un `bounds` de forma segura. Si alguno de los 4
+ * valores (north/south/east/west) no es un número finito (bounds
+ * incompletos de Google, típico en fraccionarios/zonas informales
+ * pequeñas), devuelve `null` en vez de NaN.
+ *
+ * Por qué esto importa tanto: un NaN de JS se convierte en `nil` al
+ * cruzar el puente hacia el código nativo de React Native (el puente no
+ * puede serializar NaN). Si ese `nil` termina en un array nativo (ej. los
+ * marcadores de react-native-maps), la app crashea de inmediato con
+ * "object cannot be nil" — un crash nativo, sin ningún rastro en logs de
+ * JS. Ya causó un crash real confirmado (zona "Jesús María", 3er chip
+ * agregado al mapa). Usar SIEMPRE esta función para calcular un centro
+ * desde bounds — no repetir el cálculo `(north+south)/2` a mano en
+ * ningún archivo nuevo.
+ */
+export function boundsCenter(
+  bounds: GeoBounds,
+): { latitude: number; longitude: number } | null {
+  const valid =
+    Number.isFinite(bounds.north) &&
+    Number.isFinite(bounds.south) &&
+    Number.isFinite(bounds.east) &&
+    Number.isFinite(bounds.west);
+  if (!valid) return null;
+  return {
+    latitude: (bounds.north + bounds.south) / 2,
+    longitude: (bounds.east + bounds.west) / 2,
+  };
+}
+
 export function boundsToRegion(
   bounds: GeoBounds,
   type: "estado" | "municipio" | "colonia" | string = "colonia",
@@ -367,25 +398,14 @@ export function boundsToRegion(
     MAX_DELTA,
   );
 
-  const boundsValid =
-    Number.isFinite(bounds.north) &&
-    Number.isFinite(bounds.south) &&
-    Number.isFinite(bounds.east) &&
-    Number.isFinite(bounds.west);
-
   // Centro geográfico aproximado de México, como fallback seguro si los
-  // bounds vienen incompletos — evita pasar NaN al MapView nativo, que
-  // puede crashear el SDK del mapa de forma instantánea y silenciosa
-  // (sin pasar por ningún manejador de errores de JS).
+  // bounds vienen incompletos.
   const FALLBACK_CENTER = { latitude: 23.6345, longitude: -102.5528 };
+  const center = boundsCenter(bounds) ?? FALLBACK_CENTER;
 
   return {
-    latitude: boundsValid
-      ? (bounds.north + bounds.south) / 2
-      : FALLBACK_CENTER.latitude,
-    longitude: boundsValid
-      ? (bounds.east + bounds.west) / 2
-      : FALLBACK_CENTER.longitude,
+    latitude: center.latitude,
+    longitude: center.longitude,
     latitudeDelta,
     longitudeDelta,
   };

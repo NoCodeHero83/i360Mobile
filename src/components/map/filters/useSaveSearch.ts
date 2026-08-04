@@ -3,7 +3,7 @@ import { supabase } from "../../../lib/supabase";
 import { useToast } from "../../../context/ToastContext";
 import { useModal } from "../../../context/ModalContext";
 import { DEFAULT_COUNTRY } from "../../../lib/location/registry";
-import { geocodeAddress } from "../../../lib/geocodingService";
+import { geocodeAddress, boundsCenter } from "../../../lib/geocodingService";
 
 /**
  * Normaliza los filtros comerciales para persistencia/matching. `tipoUbicacion`
@@ -167,11 +167,9 @@ export const useSaveSearch = (userId?: string) => {
     const ubicaciones = Array.isArray(filters.locationChips)
       ? filters.locationChips.map((c: any) => {
           const lf = c.locationFilter || {};
-          const center = c.bounds
-            ? {
-                latitud: (c.bounds.north + c.bounds.south) / 2,
-                longitud: (c.bounds.east + c.bounds.west) / 2,
-              }
+          const bc = c.bounds ? boundsCenter(c.bounds) : null;
+          const center = bc
+            ? { latitud: bc.latitude, longitud: bc.longitude }
             : {};
           return {
             level: c.type === "zona" ? "colonia" : c.type,

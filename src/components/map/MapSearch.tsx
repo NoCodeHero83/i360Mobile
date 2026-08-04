@@ -36,7 +36,7 @@ import {
 } from "@/store/locationSearchStore";
 import { COLORS } from "@/constants/colors";
 import { logger } from "@/utils/logger";
-import { getPlaceDetails, boundsToRegion } from "@/lib/geocodingService";
+import { getPlaceDetails, boundsToRegion, boundsCenter } from "@/lib/geocodingService";
 
 const log = logger.scoped("MapSearch");
 
@@ -116,11 +116,13 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
     const pins: { key: string; latitude: number; longitude: number }[] = [];
     for (const chip of filters.locationChips) {
       if (chip.bounds) {
-        pins.push({
-          key: chip.id,
-          latitude: (chip.bounds.north + chip.bounds.south) / 2,
-          longitude: (chip.bounds.east + chip.bounds.west) / 2,
-        });
+        const center = boundsCenter(chip.bounds);
+        // Si el bounds viene incompleto, boundsCenter devuelve null — se
+        // omite el pin en vez de agregarlo con coordenadas inválidas
+        // (ese fue el crash real: NaN → nil → "object cannot be nil").
+        if (center) {
+          pins.push({ key: chip.id, ...center });
+        }
       }
     }
     return pins;

@@ -14,6 +14,7 @@ import { COLORS } from "@/constants/colors";
 import { Globe, MapIcon, Layers, Mountain, ChevronDown } from "lucide-react-native";
 import { PolygonCoord } from "@/store/propertyFiltersStore";
 import Supercluster from "supercluster";
+import { supabase } from "@/lib/supabase";
 
 /** Estable: cada nueva referencia reescribe la prop nativa de la Polyline. */
 const DRAFT_DASH_PATTERN = [8, 4];
@@ -695,6 +696,32 @@ export const PropertyMap: React.FC<PropertyMapProps> = ({
           .filter((c: any) => c.properties.cluster)
           .map((cluster: any) => {
             const [lng, lat] = cluster.geometry.coordinates;
+            // Último punto sin proteger contra coordenadas inválidas — el
+            // resto del archivo ya valida NaN/undefined antes de crear un
+            // <Marker>. Un NaN/undefined aquí cruza el puente hacia nativo
+            // como `nil` y causa el crash "object cannot be nil" ya
+            // confirmado 3 veces con logs reales de Apple al aplicar
+            // filtros. TEMPORAL: el insert a debug_logs es solo para
+            // confirmar la causa con certeza — quitar una vez confirmado.
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+              supabase
+                .from("debug_logs")
+                .insert({
+                  contexto: "cluster_coord_invalida",
+                  payload: {
+                    clusterId: cluster.id,
+                    lat,
+                    lng,
+                    pointCount: cluster.properties?.point_count ?? null,
+                    totalPropiedadesEnMapa: properties.length,
+                  },
+                })
+                .then(
+                  () => {},
+                  () => {},
+                );
+              return null;
+            }
             return (
               <Marker
                 key={`cluster-touch-${cluster.id}`}

@@ -7,7 +7,10 @@
     "orientation": "portrait",
     "icon": "./src/assets/Icon-size.png",
     "userInterfaceStyle": "light",
-    "scheme": "ilyroxapp",
+  "scheme": [
+      "ilyroxapp",
+      "com.ilyrox.app"
+    ],
     "splash": {
       "image": "./src/assets/Icon-size.png",
       "resizeMode": "cover",
@@ -52,6 +55,11 @@
     },
     "android": {
       "softwareKeyboardLayoutMode": "resize",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCMns7F3TjXiJ4oswwws0USAgum"
+        }
+      },
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/Icon-size.png",
         "backgroundColor": "#FFFFFF"
@@ -112,6 +120,12 @@
       "expo-video",
       "@react-native-community/datetimepicker",
       "expo-web-browser",
+          [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.293660725108-e0m6asno2r6d7umkk6im1pvg1dbdd8c2"
+        }
+      ],
       "expo-router",
       "expo-font",
       "react-native-compressor"

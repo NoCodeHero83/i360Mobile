@@ -36,18 +36,17 @@ interface AppointmentCardProps {
     status: AppointmentStatus;
     rating?: number;
     hasUserRated?: boolean;
+    google_event_id?: string | null;
   };
   onMarkComplete: (id: string) => void;
   onMarkCancel: (id: string) => void;
   onOpenRating: (id: string) => void;
+  onSyncCalendar: (id: string) => void;
   onContact?: (id: string) => void;
   activeTab?: string;
   onPropertyPress?: (id: string) => void;
   onUserPress?: (id: string) => void;
 }
-
-import { buildGoogleCalendarUrl } from "./Appointments/calendarUtils";
-import { Linking } from "react-native";
 
 export const AppointmentCard: React.FC<AppointmentCardProps> = React.memo(
   ({
@@ -55,6 +54,7 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = React.memo(
     onMarkComplete,
     onMarkCancel,
     onOpenRating,
+    onSyncCalendar,
     onContact,
     activeTab,
     onPropertyPress,
@@ -168,22 +168,21 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = React.memo(
                     appointment.estado !== "cancelada" && (
                       <TouchableOpacity
                         style={styles.calendarBtn}
-                        onPress={() => {
-                          const url = buildGoogleCalendarUrl({
-                            date: appointment.fecha,
-                            time: appointment.hora.substring(0, 5),
-                            type: appointment.tipo,
-                            description: appointment.descripcion || "",
-                            propertyTitle: appointment.propertyTitle,
-                            location: appointment.location,
-                            otherUserName: appointment.user.name,
-                          });
-                          Linking.openURL(url);
-                        }}
+                        onPress={() => onSyncCalendar(appointment.id)}
                       >
-                        <GoogleCalendarIcon size={16} />
+                        {appointment.google_event_id ? (
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={16}
+                            color={COLORS.primary}
+                          />
+                        ) : (
+                          <GoogleCalendarIcon size={16} />
+                        )}
                         <Text style={styles.calendarBtnText}>
-                          Agregar a calendario
+                          {appointment.google_event_id
+                            ? "Sincronizada"
+                            : "Sincronizar"}
                         </Text>
                       </TouchableOpacity>
                     )}

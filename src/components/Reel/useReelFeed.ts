@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { PAGINATION } from "@/constants";
 import { reelService, ReelFeedRow } from "@/services/reelService";
 import { FeedItem } from "../../types";
+import { useAuth } from "@/context/AuthContext";
 
 const mapRowToFeedItem = (r: ReelFeedRow): FeedItem => ({
   id: r.feed_item_id,
@@ -31,6 +32,7 @@ const mapRowToFeedItem = (r: ReelFeedRow): FeedItem => ({
  * reels ya presentes se deduplican por feed_item id (incluido el abierto).
  */
 export const useReelFeed = (initialItem?: any) => {
+  const { user } = useAuth();
   const [reels, setReels] = useState<FeedItem[]>(
     initialItem ? [initialItem] : [],
   );
@@ -46,7 +48,11 @@ export const useReelFeed = (initialItem?: any) => {
   const pageSize = PAGINATION.REEL_PAGE_SIZE;
 
   const appendPage = useCallback(async () => {
-    const rows = await reelService.getReelsFeed(pageSize, offsetRef.current);
+    const rows = await reelService.getReelsFeed(
+      pageSize,
+      offsetRef.current,
+      user?.id,
+    );
     offsetRef.current += rows.length;
 
     if (rows.length < pageSize) setHasMore(false);
@@ -59,7 +65,7 @@ export const useReelFeed = (initialItem?: any) => {
       fresh.forEach((item) => seenIdsRef.current.add(item.id));
       setReels((prev) => [...prev, ...fresh]);
     }
-  }, [pageSize]);
+  }, [pageSize, user?.id]);
 
   // Carga inicial (una sola vez por montaje del visor)
   useEffect(() => {

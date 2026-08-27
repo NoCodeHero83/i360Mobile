@@ -37,7 +37,10 @@ export interface ProfileInfoHeaderProps {
   onSettings: () => void;
   onUpdatePhoto: (url: string) => void;
   onMessage: () => void;
+  onToggleBlock?: () => void;
   onRecommend?: (recomienda: boolean) => void;
+  isBlocked?: boolean;
+  blockingUser?: boolean;
   isRecommended?: boolean | null;
   submittingRecommendation?: boolean;
   showRatingDetails: boolean;
@@ -66,7 +69,10 @@ export const ProfileInfoHeader: React.FC<ProfileInfoHeaderProps> = ({
   onSettings,
   onUpdatePhoto,
   onMessage,
+  onToggleBlock,
   onRecommend,
+  isBlocked,
+  blockingUser,
   isRecommended,
   submittingRecommendation,
   showRatingDetails,
@@ -146,15 +152,63 @@ export const ProfileInfoHeader: React.FC<ProfileInfoHeaderProps> = ({
 
         {!isMe && (
           <View style={styles.actionsWrap}>
-            <TouchableOpacity style={styles.messageBtn} onPress={onMessage}>
-              <Ionicons
-                name="chatbubble-outline"
-                size={16}
-                color={COLORS.textPrimary}
-              />
-              <Text style={styles.messageBtnText}>Mensaje</Text>
-            </TouchableOpacity>
-            {onRecommend && (
+            <View style={styles.primaryActionsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.messageBtn,
+                  isBlocked && styles.messageBtnDisabled,
+                ]}
+                onPress={onMessage}
+                disabled={isBlocked}
+              >
+                <Ionicons
+                  name="chatbubble-outline"
+                  size={16}
+                  color={
+                    isBlocked ? COLORS.textDisabled : COLORS.textPrimary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.messageBtnText,
+                    isBlocked && styles.messageBtnTextDisabled,
+                  ]}
+                >
+                  Mensaje
+                </Text>
+              </TouchableOpacity>
+              {!!onToggleBlock && (
+                <TouchableOpacity
+                  style={[
+                    styles.blockBtn,
+                    isBlocked && styles.blockBtnActive,
+                  ]}
+                  onPress={onToggleBlock}
+                  disabled={blockingUser}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons
+                    name={isBlocked ? "lock-open-outline" : "ban-outline"}
+                    size={16}
+                    color={isBlocked ? COLORS.primary : COLORS.error}
+                  />
+                  <Text
+                    style={[
+                      styles.blockBtnText,
+                      isBlocked && styles.blockBtnTextActive,
+                    ]}
+                  >
+                    {isBlocked ? "Desbloquear" : "Bloquear"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {isBlocked && (
+              <Text style={styles.blockedHint}>
+                Dejaste de ver las propiedades de este usuario.
+              </Text>
+            )}
+            {onRecommend && !isBlocked && (
               <View style={styles.recommendRow}>
                 <TouchableOpacity
                   style={[
@@ -364,6 +418,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   messageBtn: {
+    flex: 1,
     backgroundColor: COLORS.background,
     flexDirection: "row",
     alignItems: "center",
@@ -372,10 +427,49 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
   },
+  primaryActionsRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  messageBtnDisabled: {
+    opacity: 0.65,
+  },
   messageBtnText: {
     color: COLORS.textPrimary,
     fontWeight: "600",
     fontSize: 14,
+  },
+  messageBtnTextDisabled: {
+    color: COLORS.textDisabled,
+  },
+  blockBtn: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: COLORS.error,
+  },
+  blockBtnActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.background,
+  },
+  blockBtnText: {
+    color: COLORS.error,
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  blockBtnTextActive: {
+    color: COLORS.primary,
+  },
+  blockedHint: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
   },
   recommendRow: {
     flexDirection: "row",

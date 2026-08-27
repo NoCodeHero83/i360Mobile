@@ -376,6 +376,46 @@ export type busquedas_guardadas = {
   place_name?: string;
 };
 
+/**
+ * Historial de búsquedas del usuario.
+ * Guarda las búsquedas completadas para poder restaurarlas.
+ */
+export type TipoBusqueda = 'draft' | 'ubicacion' | 'post' | 'reel' | 'usuario' | 'propiedad';
+
+export type HistorialBusqueda = {
+  id: string;
+  usuario_id: string;
+  /** Texto original que escribió el usuario en el input */
+  query_original: string | null;
+  /** Tipo de resultado seleccionado: ubicacion, post, reel, usuario, propiedad */
+  tipo_busqueda: TipoBusqueda | null;
+  /** Título del resultado seleccionado (nombre de usuario, título de post, etc.) */
+  resultado_titulo: string | null;
+  /** Subtitulo del resultado (username, preview, etc.) */
+  resultado_subtitulo: string | null;
+  /** ID del resultado seleccionado */
+  resultado_tipo_id: string | null;
+  estado: string | null;
+  ciudad: string | null;
+  municipio: string | null;
+  colonia: string | null;
+  place_name: string | null;
+  tipo_propiedad: string | null;
+  tipo_operacion: string | null;
+  precio_min: number | null;
+  precio_max: number | null;
+  moneda: string;
+  habitaciones: string | null;
+  banos: string | null;
+  estacionamientos: string | null;
+  /** Filtros completos para restaurar (PropertyFilters serializado) */
+  filtros_completos: Record<string, any>;
+  completa: boolean;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};
+
 export type agrupaciones_conversaciones = {
   id: string;
   usuario1_id: string;

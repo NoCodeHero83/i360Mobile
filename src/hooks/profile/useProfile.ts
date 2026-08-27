@@ -78,7 +78,10 @@ export const useProfile = (userId?: string | null): UseProfileReturn => {
         return await profileService.getProfile(targetUserId);
       })();
 
-      const statsPromise = profileService.getReviewStats(targetUserId);
+      const statsPromise = profileService.getReviewStats(
+        targetUserId,
+        authUser?.id,
+      );
       const recommendationPromise =
         !isMe && authUser?.id
           ? profileService.getUserRecommendation(authUser.id, targetUserId)
@@ -139,6 +142,8 @@ export const useProfile = (userId?: string | null): UseProfileReturn => {
         targetUserId,
         from,
         to,
+        true,
+        authUser?.id,
       );
 
       const mappedUsers = results as RecommendedByUser[];
@@ -165,7 +170,7 @@ export const useProfile = (userId?: string | null): UseProfileReturn => {
       // que un useEffect dispare la carga en bucle cuando el resultado es vacío.
       storeState.setRecommendedByLoaded(true);
     }
-  }, [targetUserId, activeStore]);
+  }, [targetUserId, activeStore, authUser?.id]);
 
   const loadNotRecommendedByUsers = useCallback(async (options?: { reset?: boolean }) => {
     if (!targetUserId) return;
@@ -186,6 +191,7 @@ export const useProfile = (userId?: string | null): UseProfileReturn => {
         from,
         to,
         false,
+        authUser?.id,
       );
 
       const mappedUsers = results as RecommendedByUser[];
@@ -210,7 +216,7 @@ export const useProfile = (userId?: string | null): UseProfileReturn => {
       storeState.setLoadingNotRecommendedBy(false);
       storeState.setNotRecommendedByLoaded(true);
     }
-  }, [targetUserId, activeStore]);
+  }, [targetUserId, activeStore, authUser?.id]);
 
   const handleRecommendation = useCallback(async (recomienda: boolean): Promise<boolean | null | void> => {
     const storeState = activeStore.getState();
@@ -235,7 +241,10 @@ export const useProfile = (userId?: string | null): UseProfileReturn => {
 
       storeState.setUserRecommendation(newStatus);
 
-      const newStats = await profileService.getReviewStats(targetUserId);
+      const newStats = await profileService.getReviewStats(
+        targetUserId,
+        authUser.id,
+      );
       if (newStats) {
         storeState.setReviewStats(newStats);
       }

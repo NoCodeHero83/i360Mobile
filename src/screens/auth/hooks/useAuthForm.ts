@@ -10,6 +10,7 @@ import { collapseSpaces } from "@/utils/stringNormalizer";
 
 import { OneSignal } from "react-native-onesignal";
 import { useImageUpload } from "@/hooks";
+import { applyStoredAdvisorInvite } from "@/services/communityService";
 
 export interface AuthFormState {
   // Credenciales
@@ -387,6 +388,8 @@ export function useAuthForm() {
           .select();
 
         if (profileError) throw profileError;
+
+        await applyStoredAdvisorInvite(data.user.id);
       }
 
       return true;

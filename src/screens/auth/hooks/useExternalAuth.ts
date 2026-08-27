@@ -14,6 +14,7 @@ import { Platform } from "react-native";
 import { useModal } from "@/context/ModalContext";
 import { logger } from "@/utils/logger";
 import { collapseSpaces } from "@/utils/stringNormalizer";
+import { applyStoredAdvisorInvite } from "@/services/communityService";
 
 const log = logger.scoped("useExternalAuth");
 
@@ -241,6 +242,8 @@ export function useExternalAuth() {
           .single();
 
         if (error) throw error;
+
+        await applyStoredAdvisorInvite(pendingUser.id);
  
         if (Platform.OS !== "web") OneSignal.login(pendingUser.id);
         setCurrentUser(data);

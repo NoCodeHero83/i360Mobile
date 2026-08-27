@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { logger } from "@/utils/logger";const log = logger.scoped("usePropertyDetails");
+import { blockService } from "@/services/blockService";
+import { useAuth } from "@/context/AuthContext";
+import { logger } from "@/utils/logger";
+
+const log = logger.scoped("usePropertyDetails");
 
 const usePropertyDetails = (feedItemId: string) => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [propertyDetails, setPropertyDetails] = useState<any>(null);
   const [error] = useState(null);
@@ -25,6 +30,14 @@ const usePropertyDetails = (feedItemId: string) => {
         .eq("id", feedItemId)
         .single();
 
+      if (error) throw error;
+
+      const blockedUserIds = await blockService.getBlockedUserIds(user?.id);
+      if (data?.created_by && blockedUserIds.includes(data.created_by)) {
+        setPropertyDetails(null);
+        return;
+      }
+
       const { data: feed_items, error: feed_items_error } = await supabase
         .from("feed_items")
         .select("*")
@@ -36,7 +49,6 @@ const usePropertyDetails = (feedItemId: string) => {
         feed_items: feed_items || {},
       });
 
-      if (error) throw error;
       if (feed_items_error) {
         log.warn("No feed_item found for property:");
       }
@@ -45,7 +57,7 @@ const usePropertyDetails = (feedItemId: string) => {
     } finally {
       setLoading(false);
     }
-  }, [feedItemId]);
+  }, [feedItemId, user?.id]);
 
   useEffect(() => {
     fetchPropertyDetails();

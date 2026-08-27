@@ -2,6 +2,7 @@ import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-quer
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { Property, PropertyType, GeoBounds } from "@/types";
+import { blockService } from "@/services/blockService";
 
 /**
  * Filtros que se pueden aplicar directamente en Supabase.
@@ -94,6 +95,7 @@ interface SupabaseProperty {
   activo: boolean | null;
   deleted_at: string | null;
   operaciones_propiedad: SupabaseOperacion[] | null;
+  created_by?: string | null;
   pais: string | null;
   status: string | null;
   antiguedad: number | null;
@@ -214,6 +216,7 @@ async function fetchMapProperties(
   currentUserId?: string,
 ): Promise<Property[]> {
   const active = serverFilters ? hasActiveServerFilters(serverFilters) : false;
+  const blockedUserIds = await blockService.getBlockedUserIds(currentUserId);
 
   let query = supabase
     .from("propiedades")
@@ -232,6 +235,10 @@ async function fetchMapProperties(
   }
 
   query = query.is("deleted_at", null);
+
+  if (blockedUserIds.length > 0) {
+    query = query.not("created_by", "in", `(${blockedUserIds.join(",")})`);
+  }
 
   if (serverFilters && active) {
     // ── Tipo de propiedad ──

@@ -37,6 +37,8 @@ import {
 import { COLORS } from "@/constants/colors";
 import { logger } from "@/utils/logger";
 import { getPlaceDetails, boundsToRegion, boundsCenter } from "@/lib/geocodingService";
+import { useSearchHistory } from "@/hooks/useSearchHistory";
+import { useSearchStore } from "@/store/searchStore";
 
 const log = logger.scoped("MapSearch");
 
@@ -72,6 +74,13 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
   const { suggestions, isLoading, searchLocations, clearSuggestions } =
     useLocationSearchStore();
 
+  // Search history (only for listing)
+  useSearchHistory();
+
+  // Get current search ID from the store
+  const { currentSearchId, updateSearchWithFilters, createSearchFromMap, completeSearch } = useSearchStore();
+  const userId = user?.id;
+
   const googleApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
   // Token de sesión para Places API (se reutiliza entre búsqueda y selección)
   const sessionTokenRef = useRef<string>(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -79,6 +88,34 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
   const mountedRef = useRef(true);
   const focusThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { return () => { mountedRef.current = false; if (focusThrottleRef.current) clearTimeout(focusThrottleRef.current); }; }, []);
+
+  // Actualizar búsqueda en BD cuando los filtros cambian (con debounce)
+  const filtersUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentFilters = usePropertyFiltersStore((s) => s.filters);
+
+  useEffect(() => {
+    if (!currentSearchId || !userId) return;
+
+    // Debounce: no actualizar en cada cambio, esperar 1 segundo después del último cambio
+    if (filtersUpdateTimeoutRef.current) {
+      clearTimeout(filtersUpdateTimeoutRef.current);
+    }
+
+    filtersUpdateTimeoutRef.current = setTimeout(() => {
+      if (currentSearchId && userId) {
+        console.log('🔍 [MapSearch] Actualizando búsqueda con filtros cambiados:', currentSearchId);
+        updateSearchWithFilters(currentSearchId, currentFilters, userId).catch((e: Error) => {
+          log.warn('Error actualizando historial con filtros:', e);
+        });
+      }
+    }, 1000);
+
+    return () => {
+      if (filtersUpdateTimeoutRef.current) {
+        clearTimeout(filtersUpdateTimeoutRef.current);
+      }
+    };
+  }, [currentFilters, currentSearchId, userId, updateSearchWithFilters]);
 
   const [focusRegion, setFocusRegion] = useState<{
     latitude: number;
@@ -146,7 +183,8 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
 
     // Agrega la ubicación elegida en el buscador de inicio como chip seleccionado
     // (filtro activo), igual que al elegir una zona dentro del mapa.
-    const addSelectedAsChip = (
+    // También guarda en BD para el historial de búsquedas.
+    const addSelectedAsChip = async (
       bounds?: { north: number; south: number; east: number; west: number },
     ) => {
       if (addedSelectedChipRef.current === selKey) return;
@@ -167,6 +205,22 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
         },
       };
       addLocationChip(chip);
+
+      // Guardar en BD cuando viene del SearchOverlay (Feed)
+      const currentFilters = usePropertyFiltersStore.getState().filters;
+      if (!currentSearchId && userId) {
+        try {
+          // Crear búsqueda desde mapa con ubicación
+          await createSearchFromMap(currentFilters, {
+            estado: sel.estado_nombre || (sel.type === "estado" ? sel.name : undefined),
+            municipio: sel.municipio_nombre || (sel.type === "municipio" ? sel.name : undefined),
+            colonia: sel.type === "colonia" ? sel.name : undefined,
+            placeName: sel.name,
+          }, userId);
+        } catch (e) {
+          log.warn('Error guardando ubicación en historial:', e);
+        }
+      }
     };
 
     const geocode = async () => {
@@ -311,6 +365,29 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
       },
     };
     addLocationChip(chip);
+
+    // Guardar en historial de búsquedas (bloque ubicación completado)
+    const currentFilters = usePropertyFiltersStore.getState().filters;
+    if (currentFilters.locationChips.length === 1) {
+      // Primera ubicación - crear búsqueda desde mapa con ubicación
+      try {
+        await createSearchFromMap(currentFilters, {
+          estado: loc.estado_nombre || (loc.type === "estado" ? loc.name : undefined),
+          municipio: loc.municipio_nombre || (loc.type === "municipio" ? loc.name : undefined),
+          colonia: loc.type === "colonia" ? loc.name : undefined,
+          placeName: loc.name,
+        }, userId);
+      } catch (e) {
+        log.warn('Error guardando en historial:', e);
+      }
+    } else if (currentSearchId && userId) {
+      // Ubicación adicional - actualizar búsqueda existente
+      try {
+        await updateSearchWithFilters(currentSearchId, currentFilters, userId);
+      } catch (e) {
+        log.warn('Error actualizando historial:', e);
+      }
+    }
   };
 
   // ── Handlers de marker ──
@@ -421,6 +498,14 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
     drainDraftPoints(() => {
       addPolygon(coords);
       setDrawingMode(false);
+      
+      // Actualizar historial de búsquedas (polígono completado cuenta como ubicación)
+      const currentFilters = usePropertyFiltersStore.getState().filters;
+      if (currentSearchId && userId) {
+        updateSearchWithFilters(currentSearchId, currentFilters, userId).catch((e: Error) => {
+          log.warn('Error actualizando historial con polígono:', e);
+        });
+      }
     });
   };
 
@@ -591,11 +676,22 @@ const MapSearch: React.FC<MapSearchProps> = ({ properties, onSaveSearch }) => {
         />
       </View>
 
-      <SearchFiltersModal
+        <SearchFiltersModal
         visible={showFiltersModal}
         onClose={() => setShowFiltersModal(false)}
-        onViewResults={() => {
+        onViewResults={async () => {
           setShowFiltersModal(false);
+          
+          // Marcar búsqueda como completa en historial
+          if (currentSearchId && userId) {
+            try {
+              await completeSearch(currentSearchId, userId);
+              useSearchStore.getState().clearSearch();
+            } catch (e) {
+              log.warn('Error completando búsqueda en historial:', e);
+            }
+          }
+          
           router.push({ pathname: "/map-results" } as any);
         }}
         filteredPropertiesCount={filteredProperties.length}

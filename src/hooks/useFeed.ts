@@ -111,7 +111,7 @@ export function useFeed(options: UseFeedOptions = {}) {
 
     let cancelled = false;
     profileService
-      .getRecommendationPreviewsForUsers(pendingIds)
+      .getRecommendationPreviewsForUsers(pendingIds, userId)
       .then((map) => {
         if (cancelled) return;
         setRecommendedByPreviewByUserId((prev) => {
@@ -148,7 +148,7 @@ export function useFeed(options: UseFeedOptions = {}) {
 
       const [statsRows, previewsMap] = await Promise.all([
         feedService.getReviewStats(ids),
-        profileService.getRecommendationPreviewsForUsers(ids),
+        profileService.getRecommendationPreviewsForUsers(ids, userId),
       ]);
 
       const statsById = new Map(statsRows.map((s) => [s.profesional_id, s]));

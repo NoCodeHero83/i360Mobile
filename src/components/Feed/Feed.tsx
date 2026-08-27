@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { FlashList, FlashListRef } from "@shopify/flash-list";
 import { FeedItem, User } from "../../types";
+import CommunityBuildersCarousel from "../CommunityBuildersCarousel";
 import UsersSlider from "../UsersSlider";
 import { ReelCard, PropertyCard, PostCard } from "../cards";
 
@@ -57,6 +58,7 @@ const Feed: React.FC<FeedProps> = ({
   const flatListRef = useRef<FlashListRef<FeedItem>>(null);
 
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
+  const [communityRefreshSignal, setCommunityRefreshSignal] = useState(0);
 
   // Hooks de datos reales
   const {
@@ -76,9 +78,15 @@ const Feed: React.FC<FeedProps> = ({
     enableAutoRefresh: false,
   });
 
+  const handleRefresh = useCallback(async () => {
+    setCommunityRefreshSignal((value) => value + 1);
+    await refresh();
+  }, [refresh]);
+
   useFocusEffect(
     useCallback(() => {
       refreshUserStats();
+      setCommunityRefreshSignal((value) => value + 1);
     }, [refreshUserStats]),
   );
 
@@ -100,12 +108,12 @@ const Feed: React.FC<FeedProps> = ({
     const unsubscribe = navigation.addListener("tabPress", (e: any) => {
       if (navigation.isFocused()) {
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-        refresh();
+        handleRefresh();
       }
     });
 
     return unsubscribe;
-  }, [navigation, refresh]);
+  }, [navigation, handleRefresh]);
 
   const dynamicPaddingTop = useMemo(() => {
     return Platform.OS === "ios" ? insets.top + 140 : insets.top + 130;
@@ -304,6 +312,7 @@ const Feed: React.FC<FeedProps> = ({
       onUserClick,
       focusedItemId,
       currentUserId,
+      refresh,
     ],
   );
 
@@ -311,14 +320,28 @@ const Feed: React.FC<FeedProps> = ({
 
   const ListHeader = useMemo(
     () => (
-      <UsersSlider
-        users={pendingUsers}
-        onUserClick={onUserClick}
-        onApprove={handleApproveUser}
-        onReject={handleRejectUser}
-      />
+      <>
+        <CommunityBuildersCarousel
+          currentUserId={currentUserId}
+          onUserClick={onUserClick}
+          refreshSignal={communityRefreshSignal}
+        />
+        <UsersSlider
+          users={pendingUsers}
+          onUserClick={onUserClick}
+          onApprove={handleApproveUser}
+          onReject={handleRejectUser}
+        />
+      </>
     ),
-    [pendingUsers, onUserClick, handleApproveUser, handleRejectUser],
+    [
+      currentUserId,
+      communityRefreshSignal,
+      pendingUsers,
+      onUserClick,
+      handleApproveUser,
+      handleRejectUser,
+    ],
   );
 
   const ListFooter = useMemo(() => {
@@ -398,7 +421,7 @@ const Feed: React.FC<FeedProps> = ({
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={refresh}
+            onRefresh={handleRefresh}
             tintColor={COLORS.primary}
             colors={[COLORS.primary]}
             progressViewOffset={dynamicPaddingTop}

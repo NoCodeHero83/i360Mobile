@@ -21,10 +21,12 @@ export const reelService = {
   async getReelsFeed(
     limit: number,
     offset: number,
+    currentUserId?: string,
   ): Promise<ReelFeedRow[]> {
     const { data, error } = await supabase.rpc("get_reels_feed_paged", {
       p_limit: limit,
       p_offset: offset,
+      p_current_user_id: currentUserId ?? null,
     });
 
     if (error) {

@@ -8,6 +8,7 @@
 
 import { supabase } from "@/lib/supabase";
 import { logger } from "@/utils/logger";
+import { blockService } from "@/services/blockService";
 import {
   FeedItem,
   PropertyType,
@@ -106,6 +107,16 @@ function applyCommissionVisibility(query: any, currentUserId?: string): any {
   return currentUserId
     ? query.or(`comparte_comision.eq.true,created_by.eq.${currentUserId}`)
     : query.eq("comparte_comision", true);
+}
+
+function applyBlockedAuthors(query: any, blockedUserIds: string[]): any {
+  if (blockedUserIds.length === 0) return query;
+  return query.not("publicado_por", "in", `(${blockedUserIds.join(",")})`);
+}
+
+function applyBlockedPropertyOwners(query: any, blockedUserIds: string[]): any {
+  if (blockedUserIds.length === 0) return query;
+  return query.not("created_by", "in", `(${blockedUserIds.join(",")})`);
 }
 
 /**
@@ -307,7 +318,10 @@ export interface FeedPage {
 }
 
 export const feedService = {
-  async getReviewStats(userIds: string[]): Promise<ReviewStatsRow[]> {
+  async getReviewStats(
+    userIds: string[],
+    currentUserId?: string,
+  ): Promise<ReviewStatsRow[]> {
     const ids = Array.from(new Set(userIds.filter(Boolean)));
     if (ids.length === 0) return [];
 
@@ -322,7 +336,44 @@ export const feedService = {
       log.warn("getReviewStats failed", error);
       return [];
     }
-    return ((data || []) as unknown as ReviewStatsRow[]) ?? [];
+    const rows = (((data || []) as unknown as ReviewStatsRow[]) ?? []).map(
+      (row) => ({ ...row }),
+    );
+
+    if (!currentUserId) return rows;
+
+    const blockedUserIds = await blockService.getBlockedUserIds(currentUserId);
+    if (blockedUserIds.length === 0) return rows;
+
+    const { data: recs, error: recsError } = await supabase
+      .from("recomendaciones_usuarios")
+      .select("usuario_recomendado_id,recomienda")
+      .in("usuario_recomendado_id", ids)
+      .not("recomendado_por", "in", `(${blockedUserIds.join(",")})`);
+
+    if (recsError) {
+      log.warn("getReviewStats filtered recommendations failed", recsError);
+      return rows;
+    }
+
+    const counts = new Map<string, { positive: number; negative: number }>();
+    ids.forEach((id) => counts.set(id, { positive: 0, negative: 0 }));
+    (recs ?? []).forEach((rec: any) => {
+      const current = counts.get(rec.usuario_recomendado_id);
+      if (!current) return;
+      if (rec.recomienda) current.positive += 1;
+      else current.negative += 1;
+    });
+
+    return rows.map((row) => {
+      const count = counts.get(row.profesional_id);
+      if (!count) return row;
+      return {
+        ...row,
+        total_recomiendan: count.positive,
+        total_no_recomiendan: count.negative,
+      };
+    });
   },
 
   async getFeedPage(
@@ -330,37 +381,43 @@ export const feedService = {
     pageSize: number,
     currentUserId?: string,
   ): Promise<FeedPage> {
-    const { data: feedData, error: feedError } = await supabase
+    const blockedUserIds = await blockService.getBlockedUserIds(currentUserId);
+
+    const { data: feedData, error: feedError } = await applyBlockedAuthors(
+      supabase
       .from("feed_items")
       .select(FEED_SELECT)
       .eq("estado_moderacion", "activo")
       .is("deleted_at", null)
       .order("engagement_score", { ascending: false })
       .order("publicado_en", { ascending: false })
-      .range(pageNum * pageSize, (pageNum + 1) * pageSize - 1);
+      .range(pageNum * pageSize, (pageNum + 1) * pageSize - 1),
+      blockedUserIds,
+    );
 
     if (feedError) throw feedError;
     if (!feedData || feedData.length === 0) {
       return { items: [], nextPage: null };
     }
+    const feedRows = feedData as any[];
 
     const perfilIds = Array.from(
       new Set(
-        feedData
+        feedRows
           .map((item: any) => (item.perfiles as any)?.id)
           .filter(Boolean) as string[],
       ),
     );
 
-    const postIds = feedData
-      .filter((i) => i.tipo_contenido === "post")
-      .map((i) => i.contenido_id);
-    const reelIds = feedData
-      .filter((i) => i.tipo_contenido === "reel")
-      .map((i) => i.contenido_id);
-    const propertyIds = feedData
-      .filter((i) => i.tipo_contenido === "propiedad")
-      .map((i) => i.contenido_id);
+    const postIds = feedRows
+      .filter((i: any) => i.tipo_contenido === "post")
+      .map((i: any) => i.contenido_id);
+    const reelIds = feedRows
+      .filter((i: any) => i.tipo_contenido === "reel")
+      .map((i: any) => i.contenido_id);
+    const propertyIds = feedRows
+      .filter((i: any) => i.tipo_contenido === "propiedad")
+      .map((i: any) => i.contenido_id);
 
     const [postsRes, reelsRes, propertiesRes, statsRows] = await Promise.all([
       postIds.length > 0
@@ -378,7 +435,8 @@ export const feedService = {
             .is("deleted_at", null)
         : Promise.resolve({ data: [], error: null } as any),
       propertyIds.length > 0
-        ? applyCommissionVisibility(
+        ? applyBlockedPropertyOwners(
+            applyCommissionVisibility(
             supabase
               .from("propiedades")
               .select(PROPERTY_SELECT)
@@ -386,9 +444,11 @@ export const feedService = {
               .eq("activo", true)
               .is("deleted_at", null),
             currentUserId,
+            ),
+            blockedUserIds,
           )
         : Promise.resolve({ data: [], error: null } as any),
-      feedService.getReviewStats(perfilIds),
+      feedService.getReviewStats(perfilIds, currentUserId),
     ]);
 
     const postsMap = new Map((postsRes.data || []).map((p: any) => [p.id, p]));
@@ -400,7 +460,7 @@ export const feedService = {
       statsRows.map((s) => [s.profesional_id, s]),
     );
 
-    const items = feedData
+    const items = feedRows
       .map((item: any) => {
         const perfil = item.perfiles as any;
         const stats = perfil?.id ? statsByUserId.get(perfil.id) : null;
@@ -420,11 +480,11 @@ export const feedService = {
         }
         return null;
       })
-      .filter((it): it is FeedItem => it !== null);
+      .filter((it: FeedItem | null): it is FeedItem => it !== null);
 
     return {
       items,
-      nextPage: feedData.length === pageSize ? pageNum + 1 : null,
+      nextPage: feedRows.length === pageSize ? pageNum + 1 : null,
     };
   },
 
@@ -434,25 +494,32 @@ export const feedService = {
   ): Promise<FeedItem[]> {
     if (!propertyIds.length) return [];
 
-    const { data: feedData, error: feedError } = await supabase
+    const blockedUserIds = await blockService.getBlockedUserIds(currentUserId);
+
+    const { data: feedData, error: feedError } = await applyBlockedAuthors(
+      supabase
       .from("feed_items")
       .select(FEED_SELECT)
       .eq("tipo_contenido", "propiedad")
       .eq("estado_moderacion", "activo")
       .is("deleted_at", null)
       .in("contenido_id", propertyIds)
-      .order("engagement_score", { ascending: false });
+      .order("engagement_score", { ascending: false }),
+      blockedUserIds,
+    );
 
     if (feedError) throw feedError;
     if (!feedData || feedData.length === 0) return [];
+    const feedRows = feedData as any[];
 
-    const foundIds = feedData.map((i: any) => i.contenido_id);
+    const foundIds = feedRows.map((i: any) => i.contenido_id);
     const perfilIds = Array.from(
-      new Set(feedData.map((i: any) => (i.perfiles as any)?.id).filter(Boolean)),
+      new Set(feedRows.map((i: any) => (i.perfiles as any)?.id).filter(Boolean)),
     ) as string[];
 
     const [propertiesRes, statsRows] = await Promise.all([
-      applyCommissionVisibility(
+      applyBlockedPropertyOwners(
+        applyCommissionVisibility(
         supabase
           .from("propiedades")
           .select(PROPERTY_SELECT)
@@ -460,8 +527,10 @@ export const feedService = {
           .eq("activo", true)
           .is("deleted_at", null),
         currentUserId,
+        ),
+        blockedUserIds,
       ),
-      feedService.getReviewStats(perfilIds),
+      feedService.getReviewStats(perfilIds, currentUserId),
     ]);
 
     const propertiesMap = new Map(
@@ -471,7 +540,7 @@ export const feedService = {
       statsRows.map((s) => [s.profesional_id, s]),
     );
 
-    return feedData
+    return feedRows
       .map((item: any) => {
         const perfil = item.perfiles as any;
         const stats = perfil?.id ? statsByUserId.get(perfil.id) : null;
@@ -479,19 +548,26 @@ export const feedService = {
         const property = propertiesMap.get(item.contenido_id);
         return property ? mapPropertyToFeedItem(item, property, user) : null;
       })
-      .filter((it): it is FeedItem => it !== null);
+      .filter((it: FeedItem | null): it is FeedItem => it !== null);
   },
 
   async getFeedItem(
     feedItemId: string,
     currentUserId?: string,
   ): Promise<FeedItem | null> {
-    const { data: feedData, error: feedError } = await supabase
+    const blockedUserIds = await blockService.getBlockedUserIds(currentUserId);
+
+    const feedItemQuery = applyBlockedAuthors(
+      supabase
       .from("feed_items")
       .select(FEED_SELECT)
       .or(`id.eq.${feedItemId},contenido_id.eq.${feedItemId}`)
-      .limit(1)
-      .maybeSingle();
+      .limit(1),
+      blockedUserIds,
+    );
+
+    const { data: feedData, error: feedError } =
+      await feedItemQuery.maybeSingle();
 
     if (feedError) throw feedError;
     if (!feedData) return null;
@@ -517,13 +593,16 @@ export const feedService = {
       return data ? mapReelToFeedItem(feedData, data, user) : null;
     }
     if (tipo_contenido === "propiedad") {
-      const { data } = await applyCommissionVisibility(
+      const { data } = await applyBlockedPropertyOwners(
+        applyCommissionVisibility(
         supabase
           .from("propiedades")
           .select(PROPERTY_SELECT)
           .eq("id", contenido_id)
           .is("deleted_at", null),
         currentUserId,
+        ),
+        blockedUserIds,
       ).maybeSingle();
       return data ? mapPropertyToFeedItem(feedData, data, user) : null;
     }

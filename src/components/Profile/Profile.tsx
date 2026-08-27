@@ -30,6 +30,7 @@ import { useGridProfile } from "../../hooks/profile/useGridProfile";
 import ReelDetail from "../Reel/ReelDetail";
 import FeedDetail from "../Feed/FeedDetail";
 import { useChatInitiator } from "@/hooks/messaging/useChatInitiator";
+import { useUserBlock } from "@/hooks/useUserBlock";
 import { router } from "expo-router";
 import ProfileReelItem from "./ProfileReelItem";
 import ProfilePostItem from "./ProfilePostItem";
@@ -87,6 +88,12 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
 
   const { deletePost, deleteReel } = useGridProfile();
   const { handleContact } = useChatInitiator();
+  const {
+    isBlocked,
+    loading: blockingUser,
+    block,
+    unblock,
+  } = useUserBlock(authUser?.id, userId);
 
   // Refresh control
   const [refreshing, setRefreshing] = useState(false);
@@ -145,6 +152,7 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
   const [showRatingDetails, setShowRatingDetails] = useState(false);
   // Confirmación tras recomendar / no recomendar a otro asesor.
   const [showThanksModal, setShowThanksModal] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [showRecommendedByModal, setShowRecommendedByModal] = useState(false);
   const [showNotRecommendedByModal, setShowNotRecommendedByModal] =
     useState(false);
@@ -238,6 +246,7 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
   );
 
   const listData = useMemo(() => {
+    if (!isMe && isBlocked) return [];
     switch (activeTab) {
       case "properties":
         return filteredProperties;
@@ -248,12 +257,12 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
       default:
         return [];
     }
-  }, [activeTab, filteredProperties, posts, reels]);
+  }, [activeTab, filteredProperties, posts, reels, isMe, isBlocked]);
 
   const contentCounts = {
-    properties: properties.length,
-    posts: posts.length,
-    reels: reels.length,
+    properties: !isMe && isBlocked ? 0 : properties.length,
+    posts: !isMe && isBlocked ? 0 : posts.length,
+    reels: !isMe && isBlocked ? 0 : reels.length,
   };
 
   const userProfileMapped = useMemo(
@@ -376,6 +385,10 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
   );
 
   const handleMessage = useCallback(() => {
+    if (isBlocked) {
+      showToast("Desbloquea a este usuario para enviarle mensajes", "info");
+      return;
+    }
     if (!targetUserId) return;
     handleContact(targetUserId, null, {
       id: targetUserId,
@@ -383,7 +396,36 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
       apellido_paterno: profile?.apellido_paterno || "",
       foto: profile?.foto || null,
     });
-  }, [handleContact, targetUserId, profile]);
+  }, [handleContact, targetUserId, profile, isBlocked, showToast]);
+
+  const handleToggleBlock = useCallback(() => {
+    if (isBlocked) {
+      unblock()
+        .then(() => {
+          showToast("Usuario desbloqueado", "success");
+          handleRefresh();
+        })
+        .catch((error: any) => {
+          log.error("Error unblocking user:", error);
+          showToast(error?.message || "No se pudo desbloquear", "error");
+        });
+      return;
+    }
+
+    setShowBlockConfirm(true);
+  }, [isBlocked, unblock, showToast, handleRefresh]);
+
+  const handleConfirmBlock = useCallback(async () => {
+    try {
+      await block();
+      setShowBlockConfirm(false);
+      showToast("Usuario bloqueado", "success");
+      await handleRefresh();
+    } catch (error: any) {
+      log.error("Error blocking user:", error);
+      showToast(error?.message || "No se pudo bloquear", "error");
+    }
+  }, [block, showToast, handleRefresh]);
 
   // Recomendar/No recomendar: el botón ya reacciona al instante (optimista en
   // useProfile). Al registrarse el voto, mostramos la confirmación de gracias.
@@ -410,6 +452,9 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
         onSettings={() => router.push("/settings")}
         onUpdatePhoto={updateProfilePhoto}
         onMessage={handleMessage}
+        onToggleBlock={handleToggleBlock}
+        isBlocked={isBlocked}
+        blockingUser={blockingUser}
         onRecommend={handleRecommendWithThanks}
         isRecommended={userRecommendation}
         submittingRecommendation={submittingRecommendation}
@@ -438,6 +483,9 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
       onBack,
       updateProfilePhoto,
       handleMessage,
+      handleToggleBlock,
+      isBlocked,
+      blockingUser,
       showRatingDetails,
       showRecommendedByModal,
       showNotRecommendedByModal,
@@ -513,6 +561,10 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
   );
 
   const getEmptyMessage = () => {
+    if (!isMe && isBlocked) {
+      return "Usuario bloqueado";
+    }
+
     switch (activeTab) {
       case "properties":
         return "No hay propiedades aún";
@@ -526,6 +578,10 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
   };
 
   const getEmptyIcon = () => {
+    if (!isMe && isBlocked) {
+      return "ban-outline";
+    }
+
     switch (activeTab) {
       case "properties":
         return "home-outline";
@@ -649,6 +705,18 @@ const Profile: React.FC<ProfileProps> = ({ userId, onBack }) => {
         onCancel={() => setItemToDelete(null)}
         danger
         loading={deleting}
+      />
+
+      <ConfirmDialog
+        visible={showBlockConfirm}
+        title="Bloquear usuario"
+        message="Dejarás de ver sus propiedades y sus recomendaciones no contarán en tus mediciones visibles."
+        confirmText="Bloquear"
+        cancelText="Cancelar"
+        onConfirm={handleConfirmBlock}
+        onCancel={() => setShowBlockConfirm(false)}
+        danger
+        loading={blockingUser}
       />
 
       {/* Confirmación tras recomendar / no recomendar (solo botón Aceptar) */}

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react";
+﻿import React, { useRef, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -15,12 +15,18 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "@/constants/colors";
-import { FeedItem } from "@/types";
+import { FeedItem, HistorialBusqueda } from "@/types";
 import { SpecialPostCard } from "@/components/Feed/SpecialPostCard";
 import { useSearch, SearchUser, SearchPost, SearchReel, SearchLocation, SearchProperty } from "@/hooks/useSearch";
-import { useRecentSearches } from "@/hooks/useRecentSearches";
+import { useSearchHistory } from "@/hooks/useSearchHistory";
+import { useSearchStore, TIPO_BUSQUEDA, ResultData } from "@/store/searchStore";
+import { usePropertyFiltersStore } from "@/store/propertyFiltersStore";
+import { useAuth } from "@/context/AuthContext";
+import type { TipoBusqueda } from "@/types";
+import { HistorySearches } from "@/components/search/HistorySearches";
 import { formatPriceShort } from "@/utils/priceFormatter";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -30,7 +36,7 @@ const FICHA_GAP = 10;
 const FICHA_H_PADDING = 16;
 const FICHA_ITEM_WIDTH = (SCREEN_WIDTH - FICHA_H_PADDING * 2 - FICHA_GAP) / 2;
 
-// ─── Tipos ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tipos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type Tab = "todos" | "usuarios" | "posts" | "reels" | "ubicaciones" | "fichas";
 
@@ -41,10 +47,10 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "ubicaciones", label: "Propiedades" },
 ];
 
-// ─── Componente principal ───────────────────────────────────────────────────────
+// â”€â”€â”€ Componente principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface SearchOverlayProps {
-  visible: boolean;
+  visible?: boolean;
   onClose: () => void;
   initialQuery?: string;
 }
@@ -54,6 +60,14 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
   const inputRef = useRef<TextInput>(null);
   const [activeTab, setActiveTab] = React.useState<Tab>("todos");
   const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set());
+
+  // visible undefined significa que se usa como screen (siempre visible)
+  const isVisible = visible ?? true;
+  const isScreenMode = visible === undefined;
+
+  const { user } = useAuth();
+  const userId = user?.id;
+  const router = useRouter();
 
   const {
     query,
@@ -67,13 +81,91 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
     navigateToProperty,
   } = useSearch();
 
-  const { recents, addSearch, removeSearch, clearAll } = useRecentSearches();
+  const { startSearch, updateSearchWithResult, touchTimestamp, currentSearchId, setCurrentSearchId } = useSearchStore();
+
+  // Search history from database (only for listing and deleting)
+  const {
+    historial,
+    isLoading: historyLoading,
+    eliminarBusqueda,
+  } = useSearchHistory();
+
+  // Handler: select history item
+  const handleSelectHistory = (busqueda: HistorialBusqueda) => {
+    const tipo = busqueda.tipo_busqueda;
+
+    // Si es draft o null, repetir búsqueda en overlay Y guardar el ID para actualizaciones
+    if (!tipo || tipo === 'draft') {
+      if (busqueda.query_original && userId) {
+        setQuery(busqueda.query_original);
+        touchTimestamp(busqueda.id, userId);
+        setCurrentSearchId(busqueda.id); // Guardar ID para que al seleccionar resultado se actualice esta búsqueda
+        setExpandedSections(new Set(['searchResults']));
+      }
+      return;
+    }
+
+    // Si tiene resultado_tipo_id, navegar directamente al resultado
+    if (busqueda.resultado_tipo_id) {
+      switch (tipo) {
+        case 'usuario':
+          router.push(`/(stack)/user/${busqueda.resultado_tipo_id}`);
+          break;
+        case 'post':
+          router.push(`/(stack)/post/${busqueda.resultado_tipo_id}`);
+          break;
+        case 'reel':
+          router.push(`/(stack)/reel/${busqueda.resultado_tipo_id}`);
+          break;
+        case 'propiedad':
+          router.push(`/(stack)/property/${busqueda.resultado_tipo_id}`);
+          break;
+        case 'ubicacion':
+          touchTimestamp(busqueda.id, userId!);
+          setCurrentSearchId(busqueda.id);
+          usePropertyFiltersStore.getState().setFiltersFromHistory(busqueda as any);
+          router.push('/map');
+          break;
+        default:
+          // Para otros tipos sin resultado, repetir búsqueda
+          if (busqueda.query_original && userId) {
+            setQuery(busqueda.query_original);
+            touchTimestamp(busqueda.id, userId);
+            setCurrentSearchId(busqueda.id);
+            setExpandedSections(new Set(['searchResults']));
+          }
+      }
+      return;
+    }
+
+    // Si no tiene resultado_tipo_id pero tiene tipo
+    if (tipo === 'ubicacion') {
+      touchTimestamp(busqueda.id, userId!);
+      setCurrentSearchId(busqueda.id);
+      usePropertyFiltersStore.getState().setFiltersFromHistory(busqueda as any);
+      router.push('/map');
+      return;
+    }
+
+    // Para otros tipos sin resultado_tipo_id, repetir búsqueda en overlay
+    if (busqueda.query_original && userId) {
+      setQuery(busqueda.query_original);
+      touchTimestamp(busqueda.id, userId);
+      setCurrentSearchId(busqueda.id);
+      setExpandedSections(new Set(['searchResults']));
+    }
+  };
 
   useEffect(() => {
     if (visible) {
       setQuery(initialQuery);
       setExpandedSections(new Set());
       setActiveTab("todos");
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (visible) {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [visible]);
@@ -86,13 +178,46 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
     onClose();
   };
 
-  const handleNavigate = (action: () => void) => {
-    if (query.trim()) addSearch(query.trim());
-    action();
-    handleClose();
+  // Handler: guardar búsqueda cuando presiona Enter (fire & forget)
+  const handleSubmitSearch = () => {
+    const q = query.trim();
+    if (!q) {
+      console.log('🔍 [SearchOverlay] Query vacía, no se guarda');
+      return;
+    }
+
+    if (!userId) {
+      console.error('🔍 [SearchOverlay] User not authenticated');
+      return;
+    }
+
+    console.log('🔍 [SearchOverlay] handleSubmitSearch called, query:', q);
+
+    // Fire & forget - no esperamos resultado
+    startSearch(q, userId).catch((e) => {
+      console.error('🔍 [SearchOverlay] Error creating search:', e);
+    });
   };
 
-  // ── Contenido de cada tab ──
+  // Handler: actualizar búsqueda existente cuando selecciona resultado y navegar
+  const handleNavigate = (
+    action: () => void,
+    tipo: TipoBusqueda,
+    resultData?: ResultData
+  ) => {
+    if (currentSearchId && userId) {
+      if (resultData?.name || resultData?.resultadoTitulo) {
+        updateSearchWithResult(currentSearchId, { ...resultData, tipo }, userId).catch((e) => {
+          console.error('🔍 [SearchOverlay] Error updating search:', e);
+        });
+      }
+    }
+
+    // Navegar sin cerrar el search (la navegación cambia de screen)
+    action();
+  };
+
+  // â”€â”€ Contenido de cada tab â”€â”€
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => {
@@ -101,6 +226,37 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
       else next.add(section);
       return next;
     });
+  };
+
+  // Helper para obtener datos del post clickeado
+  const getPostData = (feedItemId: string) => {
+    const post = results.posts.find(p => p.feed_item_id === feedItemId);
+    return {
+      resultadoTitulo: post?.nombre_asesor || post?.tipo || 'Post',
+      resultadoSubtitulo: post?.ubicacion || post?.fecha_hora || '',
+      resultadoTipoId: feedItemId,
+    };
+  };
+
+  // Helper para obtener datos del reel clickeado
+  const getReelData = (feedItemId: string) => {
+    const reel = results.reels.find(r => r.feed_item_id === feedItemId);
+    return {
+      resultadoTitulo: 'Reel',
+      resultadoSubtitulo: reel?.views || '',
+      resultadoTipoId: feedItemId,
+    };
+  };
+
+  // Helper para obtener datos de la propiedad clickeada
+  const getPropertyData = (propertyId: string) => {
+    const property = results.properties.find(p => p.id === propertyId);
+    const precioFormateado = property?.precio ? `$${property.precio}` : '';
+    return {
+      resultadoTitulo: property?.codigo_propiedad || 'Propiedad',
+      resultadoSubtitulo: precioFormateado || '',
+      resultadoTipoId: propertyId,
+    };
   };
 
   const renderTabTodos = () => {
@@ -122,7 +278,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
           <>
             <SectionHeader title="Usuarios" />
             {s.displayItems.map((u) => (
-              <UserRow key={u.id} user={u} onPress={() => handleNavigate(() => navigateToUser(u.id))} />
+              <UserRow key={u.id} user={u} onPress={() => handleNavigate(() => navigateToUser(u.id), TIPO_BUSQUEDA.USUARIO, { resultadoTitulo: u.name, resultadoSubtitulo: u.ocupacion, resultadoTipoId: u.id })} />
             ))}
             {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.users.length} onPress={s.toggle} />}
           </>
@@ -135,7 +291,15 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
           <>
             <SectionHeader title="Ubicaciones" />
             {s.displayItems.map((l, i) => (
-              <LocationRow key={`${l.id}-${i}`} location={l} onPress={() => handleNavigate(() => selectLocation(l))} />
+              <LocationRow 
+                key={`${l.id}-${i}`} 
+                location={l} 
+                onPress={() => handleNavigate(
+                  () => selectLocation(l),
+                  TIPO_BUSQUEDA.UBICACION,
+                  { name: l.name, type: l.type || '', estado: l.estado, municipio: l.municipio, placeId: l.placeId }
+                )} 
+              />
             ))}
             {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.locations.length} onPress={s.toggle} />}
           </>
@@ -147,7 +311,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
         return (
           <>
             <SectionHeader title="Fichas" />
-            <PropertyFichasGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToProperty(id))} />
+            <PropertyFichasGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToProperty(id), TIPO_BUSQUEDA.PROPIEDAD, getPropertyData(id))} />
             {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.properties.length} onPress={s.toggle} />}
           </>
         );
@@ -158,7 +322,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
         return (
           <>
             <SectionHeader title="Posts" />
-            <PostGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToPost(id))} />
+            <PostGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToPost(id), TIPO_BUSQUEDA.POST, getPostData(id))} />
             {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.posts.length} onPress={s.toggle} />}
           </>
         );
@@ -169,7 +333,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
         return (
           <>
             <SectionHeader title="Reels" />
-            <ReelGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToReel(id))} />
+            <ReelGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToReel(id), TIPO_BUSQUEDA.REEL, getReelData(id))} />
             {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.reels.length} onPress={s.toggle} />}
           </>
         );
@@ -191,7 +355,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
     <FlatList
       data={results.users}
       keyExtractor={(i) => i.id}
-      renderItem={({ item }) => <UserRow user={item} onPress={() => handleNavigate(() => navigateToUser(item.id))} />}
+      renderItem={({ item }) => <UserRow user={item} onPress={() => handleNavigate(() => navigateToUser(item.id), TIPO_BUSQUEDA.USUARIO)} />}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       ListEmptyComponent={!loading ? <EmptyResults query={query} /> : null}
@@ -201,7 +365,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
   const renderTabPosts = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
       {results.posts.length > 0
-        ? <PostGrid items={results.posts} onPress={(id) => handleNavigate(() => navigateToPost(id))} />
+        ? <PostGrid items={results.posts} onPress={(id) => handleNavigate(() => navigateToPost(id), TIPO_BUSQUEDA.POST, getPostData(id))} />
         : (!loading && <EmptyResults query={query} />)}
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -210,7 +374,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
   const renderTabReels = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
       {results.reels.length > 0
-        ? <ReelGrid items={results.reels} onPress={(id) => handleNavigate(() => navigateToReel(id))} />
+        ? <ReelGrid items={results.reels} onPress={(id) => handleNavigate(() => navigateToReel(id), TIPO_BUSQUEDA.REEL, getReelData(id))} />
         : (!loading && <EmptyResults query={query} />)}
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -220,7 +384,16 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
     <FlatList
       data={results.locations}
       keyExtractor={(i, idx) => `${i.id}-${idx}`}
-      renderItem={({ item }) => <LocationRow location={item} onPress={() => handleNavigate(() => selectLocation(item))} />}
+      renderItem={({ item: l }) => (
+              <LocationRow
+                location={l}
+                onPress={() => handleNavigate(
+                  () => selectLocation(l),
+                  TIPO_BUSQUEDA.UBICACION,
+                  { name: l.name, type: l.type || '', estado: l.estado || '', municipio: l.municipio, placeId: l.placeId }
+                )}
+              />
+      )}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
       ListEmptyComponent={!loading ? <EmptyResults query={query} /> : null}
@@ -230,7 +403,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
   const renderTabFichas = () => (
     <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       {results.properties.length > 0
-        ? <PropertyFichasGrid items={results.properties} onPress={(id) => handleNavigate(() => navigateToProperty(id))} />
+        ? <PropertyFichasGrid items={results.properties} onPress={(id) => handleNavigate(() => navigateToProperty(id), TIPO_BUSQUEDA.PROPIEDAD, getPropertyData(id))} />
         : (!loading && <EmptyResults query={query} />)}
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -247,116 +420,105 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
     }
   };
 
-  return (
-    <Modal visible={visible} animationType="fade" transparent={false} statusBarTranslucent onRequestClose={handleClose}>
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+  const renderSearchContent = () => (
+    <View style={[styles.container, { paddingTop: isScreenMode ? 0 : insets.top }]}>
 
-        {/* ── Header con buscador ── */}
-        <View style={styles.header}>
+      {/* â”€â”€ Header con buscador â”€â”€ */}
+      <View style={styles.header}>
+        {isScreenMode && (
+          <TouchableOpacity onPress={handleClose} style={styles.backBtn} hitSlop={8}>
+            <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+        )}
+        {!isScreenMode && (
           <TouchableOpacity onPress={handleClose} style={styles.backBtn} hitSlop={8}>
             <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
           </TouchableOpacity>
+        )}
 
-          <View style={styles.inputWrapper}>
-            <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} style={styles.inputIcon} />
-            <TextInput
-              ref={inputRef}
-              style={styles.input}
-              placeholder="¿Dónde busca tu cliente?"
-              placeholderTextColor={COLORS.textSecondary}
-              value={query}
-              onChangeText={setQuery}
-              autoCorrect={false}
-              autoCapitalize="none"
-              returnKeyType="search"
-            />
-            {loading && <ActivityIndicator size="small" color={COLORS.primary} style={{ marginRight: 4 }} />}
-            {!loading && query.length > 0 && (
-              <TouchableOpacity onPress={() => setQuery("")} hitSlop={8}>
-                <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* ── Tabs ── */}
-        <View style={styles.tabsContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
-            {TABS.map((tab) => (
-              <TouchableOpacity
-                key={tab.key}
-                onPress={() => setActiveTab(tab.key)}
-                style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <View style={styles.tabsBorder} />
-        </View>
-
-        {/* ── Contenido ── */}
-        <View style={styles.content}>
-          {query.length === 0 && recents.length > 0 && (
-            <RecentSearches
-              recents={recents}
-              onSelect={(q) => setQuery(q)}
-              onRemove={removeSearch}
-              onClearAll={clearAll}
-            />
+        <View style={styles.inputWrapper}>
+          <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} style={styles.inputIcon} />
+          <TextInput
+            ref={inputRef}
+            style={styles.input}
+            placeholder="¿Dónde busca tu cliente?"
+            placeholderTextColor={COLORS.textSecondary}
+            value={query}
+            onChangeText={setQuery}
+            onSubmitEditing={handleSubmitSearch}
+            blurOnSubmit={false}
+            autoCorrect={false}
+            autoCapitalize="none"
+            returnKeyType="search"
+          />
+          {loading && <ActivityIndicator size="small" color={COLORS.primary} style={{ marginRight: 4 }} />}
+          {!loading && query.length > 0 && (
+            <TouchableOpacity onPress={() => setQuery("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
+            </TouchableOpacity>
           )}
-          {query.length === 0 && recents.length === 0 && (
-            <View style={styles.emptyState}>
-              <Ionicons name="search" size={48} color={COLORS.cardBorder} />
-              <Text style={styles.emptyTitle}>Busca en Ilyrox</Text>
-              <Text style={styles.emptySubtitle}>Encuentra usuarios, propiedades, reels y ubicaciones</Text>
-            </View>
-          )}
-          {query.length > 0 && renderContent()}
         </View>
-
       </View>
+
+      {/* â”€â”€ Tabs â”€â”€ */}
+      <View style={styles.tabsContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
+          {TABS.map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              onPress={() => setActiveTab(tab.key)}
+              style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <View style={styles.tabsBorder} />
+      </View>
+
+        {/* â”€â”€ Contenido â”€â”€ */}
+        <View style={styles.content}>
+          {/* Historial de bÃºsquedas (de BD) */}
+          {query.length === 0 && (
+            <HistorySearches
+              historial={historial}
+              onSelect={handleSelectHistory}
+              onRemove={eliminarBusqueda}
+              isLoading={historyLoading}
+            />
+          )}
+        
+        {query.length === 0 && historial.length === 0 && !historyLoading && (
+          <View style={styles.emptyState}>
+            <Ionicons name="search" size={48} color={COLORS.cardBorder} />
+            <Text style={styles.emptyTitle}>Busca en Ilyrox</Text>
+            <Text style={styles.emptySubtitle}>Encuentra usuarios, propiedades, reels y ubicaciones</Text>
+          </View>
+        )}
+        {query.length > 0 && renderContent()}
+      </View>
+
+    </View>
+  );
+
+  // Screen mode: renderizar directo sin Modal
+  if (isScreenMode) {
+    return renderSearchContent();
+  }
+
+  // Modal mode: usar Modal
+  return (
+    <Modal visible={isVisible} animationType="fade" transparent={false} statusBarTranslucent onRequestClose={handleClose}>
+      {renderSearchContent()}
     </Modal>
   );
 }
 
-// ─── Sub-componentes ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Sub-componentes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function RecentSearches({
-  recents,
-  onSelect,
-  onRemove,
-  onClearAll,
-}: {
-  recents: string[];
-  onSelect: (q: string) => void;
-  onRemove: (q: string) => void;
-  onClearAll: () => void;
-}) {
-  return (
-    <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-      <View style={recentStyles.header}>
-        <Text style={recentStyles.headerTitle}>Búsquedas recientes</Text>
-        <TouchableOpacity onPress={onClearAll} hitSlop={8}>
-          <Text style={recentStyles.clearAll}>Borrar todo</Text>
-        </TouchableOpacity>
-      </View>
-      {recents.map((q) => (
-        <TouchableOpacity key={q} style={recentStyles.row} activeOpacity={0.7} onPress={() => onSelect(q)}>
-          <Ionicons name="time-outline" size={20} color={COLORS.textSecondary} style={recentStyles.rowIcon} />
-          <Text style={recentStyles.rowText} numberOfLines={1}>{q}</Text>
-          <TouchableOpacity onPress={() => onRemove(q)} hitSlop={8}>
-            <Ionicons name="close" size={18} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        </TouchableOpacity>
-      ))}
-      <View style={{ height: 20 }} />
-    </ScrollView>
-  );
-}
 
 function EmptyResults({ query }: { query: string }) {
   return (
@@ -390,7 +552,7 @@ function UserRow({ user, onPress }: { user: SearchUser; onPress: () => void }) {
         <Text style={userStyles.name} numberOfLines={1}>{user.name}</Text>
         {user.ocupacion && <Text style={userStyles.username}>{user.ocupacion}</Text>}
         {user.rating != null && (
-          <Text style={userStyles.followers}>⭐ {user.rating.toFixed(1)}</Text>
+          <Text style={userStyles.followers}>â­ {user.rating.toFixed(1)}</Text>
         )}
       </View>
       <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
@@ -524,7 +686,7 @@ function PostGrid({ items, onPress }: { items: SearchPost[]; onPress: (feedItemI
               </View>
             );
           })}
-          {/* Celdas vacías para completar la fila si quedan menos de 3 items */}
+          {/* Celdas vacÃ­as para completar la fila si quedan menos de 3 items */}
           {Array.from({ length: 3 - row.length }).map((_, idx) => (
             <View key={`empty-${idx}`} style={[gridStyles.postCell, { backgroundColor: "transparent" }]} />
           ))}
@@ -664,7 +826,7 @@ function LocationRow({ location, onPress }: { location: SearchLocation; onPress:
   );
 }
 
-// ─── Estilos ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Estilos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const styles = StyleSheet.create({
   container: {
@@ -998,39 +1160,4 @@ const fichaStyles = StyleSheet.create({
   },
 });
 
-const recentStyles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 6,
-  },
-  headerTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: COLORS.textPrimary,
-  },
-  clearAll: {
-    fontSize: 13,
-    color: COLORS.primary,
-    fontWeight: "600",
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.background,
-  },
-  rowIcon: {
-    marginRight: 12,
-  },
-  rowText: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.textPrimary,
-  },
-});
+

@@ -92,7 +92,7 @@ export const appointmentService = {
 
     const { data, error } = await supabase
       .from("propiedades")
-      .select("titulo, calle, numero_exterior, ciudad, codigo_postal")
+      .select("tipo, subtipo, calle, numero_exterior, ciudad, codigo_postal")
       .eq("id", propertyId)
       .single();
 
@@ -106,7 +106,9 @@ export const appointmentService = {
       .join(", ");
 
     return {
-      titulo: data.titulo || "Propiedad",
+      titulo:
+        [data.tipo, data.subtipo, data.ciudad].filter(Boolean).join(" en ") ||
+        "Propiedad",
       location: parts,
     };
   },

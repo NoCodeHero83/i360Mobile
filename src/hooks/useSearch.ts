@@ -6,6 +6,7 @@ import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { logger } from "@/utils/logger";
 import { router } from "expo-router";
+import { blockService } from "@/services/blockService";
 
 const log = logger.scoped("useSearch");
 
@@ -84,7 +85,13 @@ const EMPTY_RESULTS: SearchResults = {
   properties: [],
 };
 
-async function fetchUsers(q: string): Promise<SearchUser[]> {
+const isNotBlocked = (id: string | null | undefined, blockedIds: string[]) =>
+  !id || !blockedIds.includes(id);
+
+async function fetchUsers(
+  q: string,
+  blockedUserIds: string[],
+): Promise<SearchUser[]> {
   // RPC `buscar_perfiles`: normaliza acentos/espacios y exige que TODAS las
   // palabras del término estén presentes (AND) sobre el nombre completo armado
   // de las partes. Reemplaza el `.or(...ilike...)` que fallaba con acentos
@@ -92,17 +99,19 @@ async function fetchUsers(q: string): Promise<SearchUser[]> {
   // datos que traían dobles espacios. Ver supabase/buscar_perfiles.sql.
   const { data } = await supabase.rpc("buscar_perfiles", { q, lim: 10 });
 
-  return ((data as any[]) ?? []).map((p) => ({
-    id: p.id,
-    name: p.nombre_completo || [p.nombre, p.apellido_paterno].filter(Boolean).join(" ") || "Usuario",
-    avatar: p.foto || undefined,
-    ocupacion: p.ocupacion || undefined,
-    rating: p.calificacion_promedio ? parseFloat(p.calificacion_promedio) : undefined,
-  }));
+  return ((data as any[]) ?? [])
+    .filter((p) => isNotBlocked(p.id, blockedUserIds))
+    .map((p) => ({
+      id: p.id,
+      name: p.nombre_completo || [p.nombre, p.apellido_paterno].filter(Boolean).join(" ") || "Usuario",
+      avatar: p.foto || undefined,
+      ocupacion: p.ocupacion || undefined,
+      rating: p.calificacion_promedio ? parseFloat(p.calificacion_promedio) : undefined,
+    }));
 }
 
-async function fetchPosts(q: string): Promise<SearchPost[]> {
-  const FIELDS = "id, tipo, imagenes, fecha_hora, ubicacion, foto_propiedad, busquedas_json, antiguedad, nombre_asesor, foto_perfil_usuario, status";
+async function fetchPosts(q: string, blockedUserIds: string[]): Promise<SearchPost[]> {
+  const FIELDS = "id, publicado_por, tipo, imagenes, fecha_hora, ubicacion, foto_propiedad, busquedas_json, antiguedad, nombre_asesor, foto_perfil_usuario, status";
   const base = () => supabase.from("posts").select(FIELDS).is("deleted_at", null).limit(9);
 
   const [{ data: byContenido }, { data: byUbicacion }, { data: byTipo }] = await Promise.all([
@@ -114,7 +123,10 @@ async function fetchPosts(q: string): Promise<SearchPost[]> {
   const seen = new Set<string>();
   const posts: any[] = [];
   for (const row of [...(byContenido ?? []), ...(byUbicacion ?? []), ...(byTipo ?? [])]) {
-    if (!seen.has(row.id)) { seen.add(row.id); posts.push(row); }
+    if (!seen.has(row.id) && isNotBlocked(row.publicado_por, blockedUserIds)) {
+      seen.add(row.id);
+      posts.push(row);
+    }
   }
   if (!posts.length) return [];
 
@@ -151,17 +163,21 @@ async function fetchPosts(q: string): Promise<SearchPost[]> {
     .filter(Boolean) as SearchPost[];
 }
 
-async function fetchReels(q: string): Promise<SearchReel[]> {
+async function fetchReels(q: string, blockedUserIds: string[]): Promise<SearchReel[]> {
   const { data: reels } = await supabase
     .from("reels")
-    .select("id, thumbnail_url")
+    .select("id, publicado_por, thumbnail_url")
     .ilike("descripcion", `%${q}%`)
     .is("deleted_at", null)
     .limit(6);
 
-  if (!reels?.length) return [];
+  const visibleReels = (reels ?? []).filter((r) =>
+    isNotBlocked(r.publicado_por, blockedUserIds),
+  );
 
-  const reelIds = reels.map((r) => r.id);
+  if (!visibleReels.length) return [];
+
+  const reelIds = visibleReels.map((r) => r.id);
   const { data: feedItems } = await supabase
     .from("feed_items")
     .select("id, contenido_id, vistas_count")
@@ -171,7 +187,7 @@ async function fetchReels(q: string): Promise<SearchReel[]> {
 
   const feedMap = new Map((feedItems ?? []).map((f) => [f.contenido_id, f]));
 
-  return reels
+  return visibleReels
     .map((r) => {
       const fi = feedMap.get(r.id);
       if (!fi) return null;
@@ -188,14 +204,23 @@ async function fetchReels(q: string): Promise<SearchReel[]> {
     .filter(Boolean) as SearchReel[];
 }
 
-async function fetchProperties(q: string): Promise<SearchProperty[]> {
+async function fetchProperties(
+  q: string,
+  blockedUserIds: string[],
+): Promise<SearchProperty[]> {
   const plain = q.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const { data } = await supabase
+  let query = supabase
     .from("propiedades")
-    .select("id, codigo_propiedad, fotos, colonia, municipio, estado, habitaciones, banos, metros_cuadrados_construccion, metros_cuadrados_terreno, operaciones_propiedad(precio, moneda)")
+    .select("id, created_by, codigo_propiedad, fotos, colonia, municipio, estado, habitaciones, banos, metros_cuadrados_construccion, metros_cuadrados_terreno, operaciones_propiedad(precio, moneda)")
     .or(`codigo_propiedad.ilike.%${plain}%,unaccent(colonia).ilike.%${plain}%,unaccent(municipio).ilike.%${plain}%`)
     .is("deleted_at", null)
     .limit(20);
+
+  if (blockedUserIds.length > 0) {
+    query = query.not("created_by", "in", `(${blockedUserIds.join(",")})`);
+  }
+
+  const { data } = await query;
 
   return (data ?? []).map((p) => {
     const op = Array.isArray(p.operaciones_propiedad) ? p.operaciones_propiedad[0] : null;
@@ -223,7 +248,7 @@ export function useSearch() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const { searchLocations, suggestions, isLoading: locLoading } = useLocationSearchStore();
   const { clearFilters, setPendingOpenMap } = usePropertyFiltersStore();
   const { setSelectedLocation } = useApp();
@@ -244,11 +269,12 @@ export function useSearch() {
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
+        const blockedUserIds = await blockService.getBlockedUserIds(user?.id);
         const [users, posts, reels, properties] = await Promise.all([
-          fetchUsers(trimmed),
-          fetchPosts(trimmed),
-          fetchReels(trimmed),
-          fetchProperties(trimmed),
+          fetchUsers(trimmed, blockedUserIds),
+          fetchPosts(trimmed, blockedUserIds),
+          fetchReels(trimmed, blockedUserIds),
+          fetchProperties(trimmed, blockedUserIds),
         ]);
         if (!mountedRef.current) return;
         searchLocations(trimmed, undefined, {
@@ -269,7 +295,7 @@ export function useSearch() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, profile?.estado]);
+  }, [query, profile?.estado, user?.id]);
 
   // Sync location suggestions from store into results
   useEffect(() => {

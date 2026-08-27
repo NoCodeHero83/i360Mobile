@@ -3,34 +3,33 @@
  * Modal para crear citas desde el chat
  */
 
-import React, { useState, useRef } from "react";
+import React, { useRef, useState } from "react";
 import {
-  View,
-  Text,
-  Modal,
-  TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
-  TextInput,
   KeyboardAvoidingView,
+  Modal,
   Platform,
-  Linking,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../constants";
-import { appointmentService } from "@/services/appointmentService";
-import { logger } from "@/utils/logger";
 import { useModal } from "../../context/ModalContext";
 import { useToast } from "../../context/ToastContext";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const log = logger.scoped("CreateAppointmentModal");
-
-// Sub-components
+import { appointmentService } from "@/services/appointmentService";
+import { googleCalendarService } from "@/services/googleCalendarService";
+import { useGoogleCalendar } from "@/hooks/useGoogleCalendar";
+import { logger } from "@/utils/logger";
 import DatePickerField from "./DatePickerField";
 import TimePickerField from "./TimePickerField";
 import AppointmentTypeSelector from "./AppointmentTypeSelector";
 import { createAppointmentStyles as styles } from "./createAppointmentStyles";
+
+const log = logger.scoped("CreateAppointmentModal");
 
 interface CreateAppointmentModalProps {
   visible: boolean;
@@ -39,8 +38,6 @@ interface CreateAppointmentModalProps {
   otherUserId: string;
   currentUserId: string;
 }
-
-import { buildGoogleCalendarUrl } from "./calendarUtils";
 
 export default function CreateAppointmentModal({
   visible,
@@ -52,6 +49,7 @@ export default function CreateAppointmentModal({
   const insets = useSafeAreaInsets();
   const { showModal } = useModal();
   const { showToast } = useToast();
+  const { ensureConnection } = useGoogleCalendar(currentUserId);
   const scrollRef = useRef<ScrollView>(null);
 
   const [fechaText, setFechaText] = useState("");
@@ -93,18 +91,35 @@ export default function CreateAppointmentModal({
   const determineRoles = () =>
     appointmentService.resolveRoles(currentUserId, otherUserId);
 
+  const resetForm = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const year = tomorrow.getFullYear();
+    const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
+    const day = String(tomorrow.getDate()).padStart(2, "0");
+    setFechaText(`${year}-${month}-${day}`);
+    setHoraText("09:00");
+    setTipo("visita");
+    setDescripcion("");
+  };
+
   const handleCreateAppointment = async () => {
     if (!validateDate(fechaText)) {
       showModal({
         title: "Error",
-        message: "Fecha inválida. Usa formato YYYY-MM-DD y asegúrate que no sea anterior a hoy",
+        message:
+          "Fecha inválida. Usa formato YYYY-MM-DD y asegúrate que no sea anterior a hoy",
         confirmText: "OK",
       });
       return;
     }
 
     if (!validateTime(horaText)) {
-      showModal({ title: "Error", message: "Hora inválida. Usa formato HH:MM (24 horas)", confirmText: "OK" });
+      showModal({
+        title: "Error",
+        message: "Hora inválida. Usa formato HH:MM (24 horas)",
+        confirmText: "OK",
+      });
       return;
     }
 
@@ -114,13 +129,17 @@ export default function CreateAppointmentModal({
       const { agenteId, clienteId } = await determineRoles();
 
       if (agenteId === clienteId) {
-        showModal({ title: "Error", message: "No se puede crear una cita con el mismo usuario", confirmText: "OK" });
+        showModal({
+          title: "Error",
+          message: "No se puede crear una cita con el mismo usuario",
+          confirmText: "OK",
+        });
         return;
       }
 
       const horaStr = `${horaText}:00`;
 
-      await appointmentService.createAppointment({
+      const createdAppointment = await appointmentService.createAppointment({
         propertyId,
         agenteId,
         clienteId,
@@ -131,9 +150,6 @@ export default function CreateAppointmentModal({
         descripcion: descripcion.trim() || null,
       });
 
-      showToast("Cita creada exitosamente", "success");
-
-      // Obtener detalles adicionales para el calendario
       let propertyTitle = "";
       let location = "";
       let otherUserName = "";
@@ -148,41 +164,51 @@ export default function CreateAppointmentModal({
 
         const userData = await appointmentService.getUserBasicInfo(otherUserId);
         if (userData) {
-          otherUserName = `${userData.nombre} ${userData.apellido_paterno}`.trim();
+          otherUserName =
+            `${userData.nombre} ${userData.apellido_paterno}`.trim();
         }
       } catch (err) {
         log.warn("Could not fetch details for calendar", err);
       }
 
-      // Abrir Google Calendar automáticamente
-      const calendarUrl = buildGoogleCalendarUrl({
-        date: fechaText,
-        time: horaText,
-        type: tipo,
-        description: descripcion,
-        propertyTitle,
-        location,
-        otherUserName,
-      });
-
-      try {
-        await Linking.openURL(calendarUrl);
-      } catch (linkError) {
-        log.warn("No se pudo abrir Google Calendar:", linkError);
+      if (currentUserId === agenteId) {
+        try {
+          const connection = await ensureConnection();
+          if (connection) {
+            const event = await googleCalendarService.createEvent(connection, {
+              id: createdAppointment.id,
+              fecha: fechaText,
+              hora: horaStr,
+              tipo,
+              descripcion: descripcion.trim() || null,
+              propertyTitle,
+              location,
+              otherUserName,
+            });
+            await googleCalendarService.attachEventToAppointment(
+              createdAppointment.id,
+              event.id,
+            );
+            showToast(
+              "Cita creada y sincronizada con Google Calendar",
+              "success",
+            );
+          } else {
+            showToast("Cita creada exitosamente", "success");
+          }
+        } catch (calendarError) {
+          log.warn("Could not sync appointment with Google Calendar", calendarError);
+          showToast(
+            "La cita se creó, pero no se pudo sincronizar con Google Calendar",
+            "info",
+          );
+        }
+      } else {
+        showToast("Cita creada exitosamente", "success");
       }
 
       onClose();
-
-      // Reset form
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const year = tomorrow.getFullYear();
-      const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
-      const day = String(tomorrow.getDate()).padStart(2, "0");
-      setFechaText(`${year}-${month}-${day}`);
-      setHoraText("09:00");
-      setTipo("visita");
-      setDescripcion("");
+      resetForm();
     } catch (error: any) {
       log.error("Error creating appointment:", error);
       showToast(error.message || "Error al crear la cita", "error");
@@ -211,12 +237,10 @@ export default function CreateAppointmentModal({
           style={styles.keyboardView}
         >
           <View style={styles.container}>
-            {/* Handle */}
             <View style={styles.handleContainer}>
               <View style={styles.handle} />
             </View>
 
-            {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerTitle}>
                 <Ionicons name="calendar" size={22} color={COLORS.primary} />
@@ -231,14 +255,13 @@ export default function CreateAppointmentModal({
               </TouchableOpacity>
             </View>
 
-            {/* Content */}
             <ScrollView
               ref={scrollRef}
               style={styles.scrollView}
               contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={true}
+              showsVerticalScrollIndicator
               keyboardShouldPersistTaps="handled"
-              bounces={true}
+              bounces
             >
               <DatePickerField
                 fechaText={fechaText}
@@ -258,7 +281,6 @@ export default function CreateAppointmentModal({
                 disabled={isCreating}
               />
 
-              {/* Descripción */}
               <View style={styles.field}>
                 <Text style={styles.label}>
                   <Ionicons
@@ -283,11 +305,9 @@ export default function CreateAppointmentModal({
                 />
               </View>
 
-              {/* Spacer para scroll */}
               <View style={{ height: 250 }} />
             </ScrollView>
 
-            {/* Buttons */}
             <View
               style={[
                 styles.footer,

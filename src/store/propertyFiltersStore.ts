@@ -121,8 +121,16 @@ interface PropertyFiltersState {
    * Útil para el flujo de "Editar búsqueda" desde la pantalla de Matches.
    */
   setFiltersFromSearch: (search: busquedas_guardadas) => void;
+  /**
+   * Carga filtros desde historial de búsquedas (nueva tabla historial_busquedas).
+   * Acepta el objeto filtros_completos directamente.
+   */
+  setFiltersFromHistory: (historial: { filtros_completos: PropertyFilters; estado?: string | null; ciudad?: string | null; municipio?: string | null; colonia?: string | null; }) => void;
   pendingOpenMap: boolean;
   setPendingOpenMap: (v: boolean) => void;
+  /** ID de la búsqueda actual creada desde SearchOverlay (para reutilizar en MapSearch) */
+  currentSearchId: string | null;
+  setCurrentSearchId: (id: string | null) => void;
 }
 
 export const initialComercialFilters: ComercialFilters = {
@@ -393,8 +401,38 @@ export const usePropertyFiltersStore = create<PropertyFiltersState>(
       });
     },
 
+    /**
+     * Carga filtros desde historial de búsquedas (nueva tabla historial_busquedas).
+     * Acepta el objeto filtros_completos directamente (PropertyFilters).
+     */
+    setFiltersFromHistory: (historial: { filtros_completos: PropertyFilters; estado?: string | null; ciudad?: string | null; municipio?: string | null; colonia?: string | null; }) => {
+      if (!historial.filtros_completos) return;
+      
+      const filtros = historial.filtros_completos;
+      
+      set({
+        filters: {
+          ...initialFilters,
+          ...filtros,
+          // Asegurar que locationFilter tenga la estructura correcta
+          locationFilter: {
+            ...initialFilters.locationFilter,
+            ...(filtros.locationFilter || {}),
+            // Override con valores de ubicación si existen
+            estado: filtros.locationFilter?.estado || historial.estado || '',
+            ciudad: filtros.locationFilter?.ciudad || historial.ciudad || '',
+            municipio: filtros.locationFilter?.municipio || historial.municipio || '',
+            colonia: filtros.locationFilter?.colonia || historial.colonia || '',
+          },
+        },
+      });
+    },
+
     pendingOpenMap: false,
     setPendingOpenMap: (v) => set({ pendingOpenMap: v }),
+
+    currentSearchId: null,
+    setCurrentSearchId: (id) => set({ currentSearchId: id }),
 
     hasActiveFilters: () => {
       const { filters } = get();

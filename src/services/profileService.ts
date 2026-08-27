@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { perfiles, EstadisticasResenas } from "@/types";
 import { logger } from "@/utils/logger";
+import { blockService } from "@/services/blockService";
 
 const log = logger.scoped("profileService");
 
@@ -16,7 +17,7 @@ export const profileService = {
     return profile as perfiles | null;
   },
 
-  async getReviewStats(userId: string) {
+  async getReviewStats(userId: string, viewerUserId?: string | null) {
     const { data: statsData, error: statsError } = await supabase
       .from("vw_estadisticas_resenas")
       .select("*")
@@ -24,7 +25,33 @@ export const profileService = {
       .maybeSingle();
 
     if (statsError) throw statsError;
-    return statsData as EstadisticasResenas | null;
+    const stats = statsData as EstadisticasResenas | null;
+    if (!stats || !viewerUserId) return stats;
+
+    const blockedUserIds = await blockService.getBlockedUserIds(viewerUserId);
+    if (blockedUserIds.length === 0) return stats;
+
+    const { data: recs, error: recsError } = await supabase
+      .from("recomendaciones_usuarios")
+      .select("recomienda")
+      .eq("usuario_recomendado_id", userId)
+      .not("recomendado_por", "in", `(${blockedUserIds.join(",")})`);
+
+    if (recsError) {
+      log.warn("getReviewStats filtered recommendations failed", recsError);
+      return stats;
+    }
+
+    const totalRecomiendan = (recs ?? []).filter((r: any) => r.recomienda).length;
+    const totalNoRecomiendan = (recs ?? []).filter(
+      (r: any) => !r.recomienda,
+    ).length;
+
+    return {
+      ...stats,
+      total_recomiendan: totalRecomiendan,
+      total_no_recomiendan: totalNoRecomiendan,
+    };
   },
 
   async getUserRecommendation(recommenderId: string, targetUserId: string) {
@@ -44,13 +71,26 @@ export const profileService = {
     from: number,
     to: number,
     recomienda: boolean = true,
+    viewerUserId?: string | null,
   ) {
-    const { data: recsData, error: recsError } = await supabase
+    const blockedUserIds = await blockService.getBlockedUserIds(viewerUserId);
+
+    let recsQuery = supabase
       .from("recomendaciones_usuarios")
       .select("recomendado_por")
       .eq("usuario_recomendado_id", targetUserId)
       .eq("recomienda", recomienda)
       .range(from, to);
+
+    if (blockedUserIds.length > 0) {
+      recsQuery = recsQuery.not(
+        "recomendado_por",
+        "in",
+        `(${blockedUserIds.join(",")})`,
+      );
+    }
+
+    const { data: recsData, error: recsError } = await recsQuery;
 
     if (recsError) throw recsError;
 
@@ -105,15 +145,20 @@ export const profileService = {
     }
   },
 
-  async getRecommendationPreviewsForUsers(userIds: string[]) {
+  async getRecommendationPreviewsForUsers(
+    userIds: string[],
+    viewerUserId?: string | null,
+  ) {
     const ids = Array.from(new Set(userIds.filter(Boolean)));
     if (ids.length === 0) return {};
 
     try {
+      const blockedUserIds = await blockService.getBlockedUserIds(viewerUserId);
+
       // 1. Obtener recomendaciones y sus perfiles en una sola consulta batch
       // Limitamos a un número razonable para evitar traer miles si un usuario es muy popular,
       // ya que solo necesitamos unos pocos para el "preview".
-      const { data, error } = await supabase
+      let query = supabase
         .from("recomendaciones_usuarios")
         .select(
           `
@@ -131,6 +176,16 @@ export const profileService = {
         .in("usuario_recomendado_id", ids)
         .eq("recomienda", true)
         .limit(1000); // Tope generoso para cubrir múltiples usuarios populares en un solo viaje
+
+      if (blockedUserIds.length > 0) {
+        query = query.not(
+          "recomendado_por",
+          "in",
+          `(${blockedUserIds.join(",")})`,
+        );
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 

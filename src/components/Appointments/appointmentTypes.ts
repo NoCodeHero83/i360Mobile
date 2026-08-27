@@ -41,6 +41,9 @@ export interface AppointmentItem {
     rating?: number;
     hasUserRated?: boolean;
     featureRatings?: FeatureRatings;
+    google_event_id?: string | null;
+    google_calendar_id?: string | null;
+    google_last_synced_at?: string | null;
     agente?: {
         id: string;
         nombre: string;

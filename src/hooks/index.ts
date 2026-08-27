@@ -5,6 +5,7 @@ export { useLikes } from "./useLikes";
 export { useComments } from "./useComments";
 export { useShare } from "./useShare";
 export { useUserApprovals } from "./useUserApprovals";
+export { useUserBlock } from "./useUserBlock";
 export { useViewTracking } from "./useViewTracking";
 
 // Re-export existing hooks if you have them

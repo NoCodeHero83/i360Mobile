@@ -91,7 +91,7 @@ export function useConversations(userId?: string) {
       )
       .subscribe((status, err) => {
         if (err) {
-          log.error("Realtime subscription error", err);
+          log.warn("Realtime subscription error", err);
         }
         if (status === "CHANNEL_ERROR") {
           log.warn("Channel error en conversaciones Realtime — retrying via polling");

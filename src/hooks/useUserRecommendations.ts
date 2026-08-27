@@ -1,6 +1,9 @@
 import { useState, useCallback } from "react";
 import { profileService } from "../services/profileService";
-import { logger } from "@/utils/logger";const log = logger.scoped("useUserRecommendations");
+import { useAuth } from "@/context/AuthContext";
+import { logger } from "@/utils/logger";
+
+const log = logger.scoped("useUserRecommendations");
 
 export interface RecommendedUser {
   id: string;
@@ -14,6 +17,7 @@ export interface RecommendedUser {
 }
 
 export const useUserRecommendations = (userId?: string) => {
+  const { user } = useAuth();
   const [recommendedList, setRecommendedList] = useState<RecommendedUser[]>([]);
   const [loadingRecommended, setLoadingRecommended] = useState(false);
 
@@ -32,6 +36,8 @@ export const useUserRecommendations = (userId?: string) => {
         userId,
         0,
         49,
+        true,
+        user?.id,
       );
 
       const mapped: RecommendedUser[] = (profiles || []).map((p: any) => {
@@ -54,7 +60,7 @@ export const useUserRecommendations = (userId?: string) => {
     } finally {
       setLoadingRecommended(false);
     }
-  }, [userId]);
+  }, [userId, user?.id]);
 
   return {
     recommendedList,

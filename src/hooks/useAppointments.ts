@@ -14,6 +14,8 @@ import {
 } from "../components/Appointments/appointmentTypes";
 import { profileService } from "../services/profileService";
 import { formatPhoneNumber } from "../components/Profile/profileFormatters";
+import { googleCalendarService } from "@/services/googleCalendarService";
+import { useGoogleCalendar } from "@/hooks/useGoogleCalendar";
 import { logger } from "@/utils/logger";
 
 const log = logger.scoped("useAppointments");
@@ -23,7 +25,8 @@ export const useAppointments = () => {
     const { showToast } = useToast();
     const { showModal } = useModal();
     const { handleContact } = useChatInitiator();
-    const { handleCancelAppointment } = useAppointment();
+    const { ensureConnection } = useGoogleCalendar(profile?.id);
+    const { handleCancelAppointment } = useAppointment(profile?.id);
 
     const [activeTab, setActiveTab] = useState<"upcoming" | "past">("upcoming");
     const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
@@ -163,13 +166,59 @@ export const useAppointments = () => {
             // sin él, ConfirmationModal solo muestra el botón de confirmar.
             onCancel: () => {},
             onConfirm: async () => {
-                const success = await handleCancelAppointment(id);
+                const appointment = appointments.find((a) => a.id === id);
+                const success = await handleCancelAppointment(
+                    id,
+                    appointment?.google_event_id,
+                );
                 if (success) {
                     await loadAppointments();
                     showToast("Cita cancelada correctamente", "success");
                 }
             },
         });
+    };
+
+    const handleSyncCalendar = async (id: string) => {
+        const appointment = appointments.find((a) => a.id === id);
+        if (!appointment || !profile?.id) return;
+
+        try {
+            const connection = await ensureConnection();
+            if (!connection) return;
+
+            const payload = {
+                id: appointment.id,
+                fecha: appointment.fecha,
+                hora: appointment.hora,
+                tipo: appointment.tipo,
+                descripcion: appointment.descripcion,
+                propertyTitle: appointment.propertyTitle,
+                location: appointment.location,
+                otherUserName: appointment.user.name,
+            };
+
+            const event = appointment.google_event_id
+                ? await googleCalendarService.updateEvent(
+                    connection,
+                    appointment.google_event_id,
+                    payload,
+                )
+                : await googleCalendarService.createEvent(connection, payload);
+
+            await googleCalendarService.attachEventToAppointment(
+                appointment.id,
+                event.id,
+            );
+            await loadAppointments();
+            showToast("Cita sincronizada con Google Calendar", "success");
+        } catch (error: any) {
+            log.warn("Error syncing Google Calendar:", error);
+            showToast(
+                error.message || "No se pudo sincronizar Google Calendar",
+                "error",
+            );
+        }
     };
 
     const handleOpenRating = (id: string) => {
@@ -335,6 +384,7 @@ export const useAppointments = () => {
         handleMarkComplete,
         handleMarkCancel,
         handleOpenRating,
+        handleSyncCalendar,
         handleSubmitRating,
         handleContactPress,
         handlePropertyPress,

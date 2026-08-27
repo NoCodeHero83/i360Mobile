@@ -30,7 +30,6 @@ import { supabase } from "../lib/supabase";
 import { Image } from "expo-image";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
-import SearchOverlay from "./search/SearchOverlay";
 
 interface LocationSearchBarProps {
   onLocationSelect: (location: LocationSuggestionWithCount | null) => void;
@@ -55,7 +54,6 @@ export const LocationSearchBar: React.FC<LocationSearchBarProps> = ({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [propertySuggestions, setPropertySuggestions] = useState<PropertyCodeSuggestion[]>([]);
   const [preloadedSuggestions] = useState<LocationSuggestionWithCount[]>([]);
-  const [showSearchOverlay, setShowSearchOverlay] = useState(false);
   const { profile } = useAuth();
   const { selectedLocation } = useApp();
 
@@ -154,16 +152,10 @@ export const LocationSearchBar: React.FC<LocationSearchBarProps> = ({
 
   return (
     <>
-      <SearchOverlay
-        visible={showSearchOverlay}
-        onClose={() => setShowSearchOverlay(false)}
-        initialQuery={query}
-      />
-
       <View style={styles.inputRow}>
         <TouchableOpacity
           style={[styles.searchButton, containerStyle]}
-          onPress={() => setShowSearchOverlay(true)}
+          onPress={() => router.push('/search')}
           activeOpacity={0.8}
         >
           <Ionicons name="search-outline" size={18} color={COLORS.textTertiary} />

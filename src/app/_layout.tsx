@@ -23,6 +23,7 @@ import {
   AppState,
   AppStateStatus,
 } from "react-native";
+import * as Linking from "expo-linking";
 
 import { AppProvider } from "@/context/AppContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
@@ -37,6 +38,7 @@ import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { useOTAUpdates } from "@/hooks/useOTAUpdates";
 import { VersionUpdateModal } from "@/components/modals/VersionUpdateModal";
 import { supabase } from "@/lib/supabase";
+import { storeInviteCodeFromUrl } from "@/services/communityService";
 import { logger } from "@/utils/logger";
 
 // Ignore common warnings that do not affect functionality
@@ -302,6 +304,35 @@ function RootLayoutNav() {
     };
   }, []);
 
+  // Detecta invitaciones de asesores aunque la app se abra en frío. El registro
+  // consume este código después de crear el perfil para aplicar la aprobación
+  // automática del asesor que invitó.
+  useEffect(() => {
+    let mounted = true;
+
+    const captureUrl = async (url: string | null) => {
+      if (!url) return;
+      try {
+        await storeInviteCodeFromUrl(url);
+      } catch (error) {
+        logger.warn("[invites] no se pudo guardar el enlace de invitación:", error);
+      }
+    };
+
+    Linking.getInitialURL().then((url) => {
+      if (mounted) captureUrl(url);
+    });
+
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      captureUrl(url);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+
   // Global StatusBar setup
   useEffect(() => {
     StatusBar.setHidden(false);
@@ -429,4 +460,3 @@ function RootLayoutNav() {
     </>
   );
 }
-

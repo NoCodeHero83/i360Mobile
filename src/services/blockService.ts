@@ -11,9 +11,26 @@ export interface BlockedUser {
   blockedAt?: string | null;
 }
 
+interface CacheEntry {
+  ids: string[];
+  expires: number;
+}
+
+const blockedUsersCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function invalidateBlockedUsersCache(blockerId: string) {
+  blockedUsersCache.delete(blockerId);
+}
+
 export const blockService = {
   async getBlockedUserIds(blockerId?: string | null): Promise<string[]> {
     if (!blockerId) return [];
+
+    const cached = blockedUsersCache.get(blockerId);
+    if (cached && cached.expires > Date.now()) {
+      return cached.ids;
+    }
 
     const { data, error } = await supabase
       .from("bloqueos_usuarios")
@@ -25,9 +42,16 @@ export const blockService = {
       return [];
     }
 
-    return (data ?? [])
+    const ids = (data ?? [])
       .map((row: any) => row.bloqueado_id)
       .filter(Boolean) as string[];
+
+    blockedUsersCache.set(blockerId, {
+      ids,
+      expires: Date.now() + CACHE_TTL_MS,
+    });
+
+    return ids;
   },
 
   async getBlockedUsers(blockerId?: string | null): Promise<BlockedUser[]> {
@@ -117,6 +141,8 @@ export const blockService = {
     );
 
     if (error) throw error;
+
+    invalidateBlockedUsersCache(blockerId);
   },
 
   async unblockUser(blockerId: string, blockedId: string) {
@@ -127,5 +153,7 @@ export const blockService = {
       .eq("bloqueado_id", blockedId);
 
     if (error) throw error;
+
+    invalidateBlockedUsersCache(blockerId);
   },
 };

@@ -40,6 +40,7 @@ import { ViewImage } from "./ViewImage";
 import { Comment } from "../../types";
 import { ScreenWrapper } from "../../screens/ScreenWrapper";
 import MessageInput from "../Messaging/MessageInput";
+import { supabase } from "../../lib/supabase";
 
 // ============================================================================
 // Types
@@ -205,8 +206,14 @@ export default function CommentsBottomSheet({
   useEffect(() => {
     if (!visible) {
       setReplyTo(null);
+    } else if (visible && feedItemId && currentUserId) {
+      // Marcar post como visto para cancelar notificaciones duplicadas
+      supabase.rpc('mark_post_as_seen', {
+        p_feed_item_id: feedItemId,
+        p_user_id: currentUserId
+      });
     }
-  }, [visible]);
+  }, [visible, feedItemId, currentUserId]);
 
   // ============================================================================
   // Handlers

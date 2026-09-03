@@ -1,14 +1,26 @@
 import { useState, useEffect } from "react";
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import Constants from "expo-constants";
-import { logger } from "@/utils/logger";const log = logger.scoped("useVersionCheck");
+import { logger } from "@/utils/logger";
+
+const log = logger.scoped("useVersionCheck");
+
+const VERSION_CACHE_KEY = "ilyrox:version_cache";
+const VERSION_CACHE_TTL_MS = 60 * 60 * 1000;
 
 export interface VersionInfo {
   platform: string;
   version: string;
   store_url: string;
   enabled: boolean;
+}
+
+interface CachedVersion {
+  data: VersionInfo | null;
+  updateRequired: boolean;
+  timestamp: number;
 }
 
 export const useVersionCheck = () => {
@@ -26,6 +38,22 @@ export const useVersionCheck = () => {
       return;
     }
     try {
+      const cachedStr = await AsyncStorage.getItem(VERSION_CACHE_KEY);
+      if (cachedStr) {
+        const cached: CachedVersion = JSON.parse(cachedStr);
+        if (Date.now() - cached.timestamp < VERSION_CACHE_TTL_MS) {
+          log.info("useVersionCheck: Using cached version info");
+          setUpdateRequired(cached.updateRequired);
+          setVersionInfo(cached.data);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (e) {
+      log.warn("useVersionCheck: Failed to read cache", e);
+    }
+
+    try {
       setLoading(true);
       const platform = Platform.OS === "android" ? "android" : "ios";
       const currentVersion = Constants.expoConfig?.version || "1.0.0";
@@ -39,13 +67,22 @@ export const useVersionCheck = () => {
 
       if (error) throw error;
 
+      let needsUpdate = false;
       if (data) {
         const latestVersion = data.version;
-        if (isVersionLower(currentVersion, latestVersion)) {
+        needsUpdate = isVersionLower(currentVersion, latestVersion);
+        if (needsUpdate) {
           setUpdateRequired(true);
           setVersionInfo(data);
         }
       }
+
+      const cacheEntry: CachedVersion = {
+        data: data || null,
+        updateRequired: needsUpdate,
+        timestamp: Date.now(),
+      };
+      await AsyncStorage.setItem(VERSION_CACHE_KEY, JSON.stringify(cacheEntry));
     } catch (error) {
       log.error("Error al verificar versión:", error);
     } finally {

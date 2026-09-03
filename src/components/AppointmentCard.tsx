@@ -37,13 +37,16 @@ interface AppointmentCardProps {
     rating?: number;
     hasUserRated?: boolean;
     google_event_id?: string | null;
+    created_by?: string | null;
   };
   onMarkComplete: (id: string) => void;
   onMarkCancel: (id: string) => void;
   onOpenRating: (id: string) => void;
   onSyncCalendar: (id: string) => void;
   onContact?: (id: string) => void;
+  onEdit?: (id: string) => void;
   activeTab?: string;
+  currentUserId?: string;
   onPropertyPress?: (id: string) => void;
   onUserPress?: (id: string) => void;
 }
@@ -56,7 +59,9 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = React.memo(
     onOpenRating,
     onSyncCalendar,
     onContact,
+    onEdit,
     activeTab,
+    currentUserId,
     onPropertyPress,
     onUserPress,
   }) => {
@@ -72,6 +77,12 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = React.memo(
 
       return appointmentDateTime <= now;
     };
+
+    const canEdit =
+      activeTab === "upcoming" &&
+      appointment.estado !== "cancelada" &&
+      !!currentUserId &&
+      appointment.created_by === currentUserId;
 
     return (
       <View style={styles.card}>
@@ -110,18 +121,32 @@ export const AppointmentCard: React.FC<AppointmentCardProps> = React.memo(
                 </View>
               </View>
             </Pressable>
-            {onContact && (
+            {(canEdit || onContact) && (
               <View style={styles.headerActions}>
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => onContact(appointment.id)}
-                >
-                  <Ionicons
-                    name="chatbubble-outline"
-                    size={22}
-                    color={COLORS.textTertiary}
-                  />
-                </TouchableOpacity>
+                {canEdit && (
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => onEdit?.(appointment.id)}
+                  >
+                    <Ionicons
+                      name="create-outline"
+                      size={22}
+                      color={COLORS.primaryDark}
+                    />
+                  </TouchableOpacity>
+                )}
+                {onContact && (
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => onContact(appointment.id)}
+                  >
+                    <Ionicons
+                      name="chatbubble-outline"
+                      size={22}
+                      color={COLORS.textTertiary}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>

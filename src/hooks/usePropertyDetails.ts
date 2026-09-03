@@ -3,14 +3,24 @@ import { supabase } from "../lib/supabase";
 import { blockService } from "@/services/blockService";
 import { useAuth } from "@/context/AuthContext";
 import { logger } from "@/utils/logger";
+import { usePropertyCacheStore, CachedPropertyData } from "@/store/propertyCacheStore";
 
 const log = logger.scoped("usePropertyDetails");
 
-const usePropertyDetails = (feedItemId: string) => {
+interface UsePropertyDetailsOptions {
+  initialData?: CachedPropertyData | null;
+}
+
+const usePropertyDetails = (
+  feedItemId: string,
+  options: UsePropertyDetailsOptions = {}
+) => {
+  const { initialData } = options;
   const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [propertyDetails, setPropertyDetails] = useState<any>(null);
+  const [loading, setLoading] = useState(!initialData);
+  const [propertyDetails, setPropertyDetails] = useState<any>(initialData ?? null);
   const [error] = useState(null);
+  const setCache = usePropertyCacheStore((state) => state.setProperty);
 
   const fetchPropertyDetails = useCallback(async () => {
     try {
@@ -44,10 +54,13 @@ const usePropertyDetails = (feedItemId: string) => {
         .eq("contenido_id", feedItemId)
         .single();
 
-      setPropertyDetails({
+      const result = {
         ...data,
         feed_items: feed_items || {},
-      });
+      };
+
+      setPropertyDetails(result);
+      setCache(feedItemId, data);
 
       if (feed_items_error) {
         log.warn("No feed_item found for property:");
@@ -57,7 +70,7 @@ const usePropertyDetails = (feedItemId: string) => {
     } finally {
       setLoading(false);
     }
-  }, [feedItemId, user?.id]);
+  }, [feedItemId, user?.id, setCache]);
 
   useEffect(() => {
     fetchPropertyDetails();

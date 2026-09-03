@@ -10,7 +10,6 @@ import {
   FlatList,
   Modal,
   Platform,
-  Linking,
   Pressable,
   ScrollView,
   Share,
@@ -19,28 +18,32 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
-  ViewToken,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { COLORS } from "@/constants/colors";
 import Avatar from "./shared/Avatar";
+import { ShimmerCard } from "./shared/Shimmer";
 import { User } from "@/types";
 import {
   buildAdvisorInviteLink,
+  bulkRecordConstructorViews,
   CommunityBuilder,
-  getCommunityBuilders,
+  getCommunityBuildersV2,
   getOrCreateAdvisorInviteCode,
-  recordCommunityBuilderView,
 } from "@/services/communityService";
+import { useViewTracker } from "@/hooks/useCommunityBuilderViewTracker";
 import { logger } from "@/utils/logger";
+import { Image } from "expo-image";
 
 const log = logger.scoped("CommunityBuildersCarousel");
+const COHETE_SOURCE = require("../assets/cohete_ilyrox.png");
 
 type InviteCard = { type: "invite"; id: "invite" };
 type BuilderCard = { type: "builder"; id: string; builder: CommunityBuilder };
-type CarouselItem = InviteCard | BuilderCard;
+type ShimmerCard = { type: "shimmer"; id: string };
+type CarouselItem = InviteCard | BuilderCard | ShimmerCard;
 
 interface CommunityBuildersCarouselProps {
   currentUserId?: string;
@@ -74,37 +77,91 @@ const CommunityBuildersCarousel: React.FC<CommunityBuildersCarouselProps> = ({
 }) => {
   const { width } = useWindowDimensions();
   const [builders, setBuilders] = useState<CommunityBuilder[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [inviteVisible, setInviteVisible] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const viewedBuilderIds = useRef(new Set<string>());
-  const currentUserIdRef = useRef(currentUserId);
+  const [hasMore, setHasMore] = useState(true);
+  const offsetRef = useRef(0);
+  const isLoadingRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const refreshSignalRef = useRef(refreshSignal);
 
   const cardWidth = Math.min(132, Math.max(116, Math.floor(width * 0.32)));
-  const inviteCardWidth = Math.min(166, Math.max(148, Math.floor(width * 0.42)));
-  const appStoreUrl = process.env.EXPO_PUBLIC_APP_STORE_URL;
-  const googlePlayUrl = process.env.EXPO_PUBLIC_GOOGLE_PLAY_URL;
+  const inviteCardWidth = Math.min(128, Math.max(148, Math.floor(width * 0.36)));
+  const PAGE_SIZE = 4;
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    refreshSignalRef.current = refreshSignal;
+  }, [refreshSignal]);
 
   const loadBuilders = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    if (isLoadingRef.current) return;
+    if (refreshSignalRef.current !== refreshSignal) return;
+
+    isLoadingRef.current = true;
     setLoading(true);
+    offsetRef.current = 0;
+
     try {
-      viewedBuilderIds.current.clear();
-      const data = await getCommunityBuilders(currentUserId);
-      setBuilders(data);
+      const result = await getCommunityBuildersV2(PAGE_SIZE, 0);
+      if (!isMountedRef.current) return;
+      if (refreshSignalRef.current !== refreshSignal) return;
+      setBuilders(result.builders);
+      setHasMore(result.hasMore);
     } catch (error) {
-      log.warn("Could not load community builders", error);
+      if (!isMountedRef.current) return;
+      log.warn("Could not load community builders v2", error);
     } finally {
+      if (!isMountedRef.current) return;
       setLoading(false);
+      isLoadingRef.current = false;
     }
-  }, [currentUserId]);
+  }, [refreshSignal]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || isLoadingRef.current) return;
+    isLoadingRef.current = true;
+    setLoadingMore(true);
+    try {
+      offsetRef.current += PAGE_SIZE;
+      const result = await getCommunityBuildersV2(PAGE_SIZE, offsetRef.current);
+      if (!isMountedRef.current) return;
+      setBuilders((prev) => [...prev, ...result.builders]);
+      setHasMore(result.hasMore);
+    } catch (error) {
+      if (!isMountedRef.current) return;
+      log.warn("Could not load more community builders", error);
+      offsetRef.current -= PAGE_SIZE;
+    } finally {
+      if (!isMountedRef.current) return;
+      setLoadingMore(false);
+      isLoadingRef.current = false;
+    }
+  }, [loadingMore, hasMore]);
 
   useEffect(() => {
+    isLoadingRef.current = false;
     loadBuilders();
-  }, [loadBuilders, refreshSignal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
 
-  useEffect(() => {
-    currentUserIdRef.current = currentUserId;
-  }, [currentUserId]);
+  const shimmerBuilderItems = useMemo<CarouselItem[]>(
+    () =>
+      Array.from({ length: PAGE_SIZE }, (_, i) => ({
+        type: "shimmer" as const,
+        id: `shimmer-${i}`,
+      })),
+    [PAGE_SIZE]
+  );
 
   const items = useMemo<CarouselItem[]>(
     () => [
@@ -115,7 +172,12 @@ const CommunityBuildersCarousel: React.FC<CommunityBuildersCarouselProps> = ({
         builder,
       })),
     ],
-    [builders],
+    [builders]
+  );
+
+  const displayItems = useMemo<CarouselItem[]>(
+    () => (loading ? [{ type: "invite" as const, id: "invite" }, ...shimmerBuilderItems] : items),
+    [loading, items, shimmerBuilderItems]
   );
 
   const shareInvite = useCallback(async () => {
@@ -129,10 +191,11 @@ const CommunityBuildersCarousel: React.FC<CommunityBuildersCarouselProps> = ({
 
       const message =
         "Bienvenido a ILYROX. Te invito a unirte a una comunidad de asesores inmobiliarios. Regístrate con este enlace y entrarás a mi red.";
+      const fullMessage = `${message}\n\n${link}`;
 
       await Share.share({
         title: "Invitación a ILYROX",
-        message: Platform.OS === "ios" ? message : `${message}\n\n${link}`,
+        message: fullMessage,
         url: Platform.OS === "ios" ? link : undefined,
       });
     } catch (error) {
@@ -142,47 +205,35 @@ const CommunityBuildersCarousel: React.FC<CommunityBuildersCarouselProps> = ({
     }
   }, [currentUserId, sharing]);
 
-  const openStoreUrl = useCallback((url?: string) => {
-    if (!url) return;
-    Linking.openURL(url).catch((error) => {
-      log.warn("Could not open store url", error);
-    });
-  }, []);
-
-  const handleViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      viewableItems.forEach((viewable) => {
-        const item = viewable.item as CarouselItem;
-        if (item.type !== "builder") return;
-        if (viewedBuilderIds.current.has(item.builder.id)) return;
-        viewedBuilderIds.current.add(item.builder.id);
-        recordCommunityBuilderView(currentUserIdRef.current, item.builder.id);
-      });
-    },
-  ).current;
-
   const renderItem = useCallback(
     ({ item }: { item: CarouselItem }) => {
       if (item.type === "invite") {
         return (
           <TouchableOpacity
             activeOpacity={0.88}
-            style={[styles.inviteCard, { width: inviteCardWidth }]}
+            style={[styles.inviteCard, { width: inviteCardWidth,backgroundColor:"#f8f8fa" }]}
             onPress={() => setInviteVisible(true)}
           >
-            <View style={styles.rocketCircle}>
-              <Ionicons name="rocket-outline" size={44} color={COLORS.primary} />
+            <View style={{flexDirection:'row',justifyContent:'center'}}>
+              <Image source={COHETE_SOURCE}
+              style={{height:90,width:90}}
+            resizeMode="contain"
+              />
             </View>
             <Text style={styles.inviteTitle}>Invita asesores</Text>
             <Text style={styles.inviteText}>
-              a ILYROX y aparece aquí en constructores de comunidad
+              a <Text style={{color:COLORS.primary}}>ILYROX</Text> y aparece aquí en constructores de comunidad
             </Text>
             <View style={styles.inviteButton}>
-              <Text style={styles.inviteButtonText}>Invitar</Text>
+              <Text style={styles.inviteButtonText}>Invitar asesores</Text>
               <Ionicons name="chevron-forward" size={16} color={COLORS.white} />
             </View>
           </TouchableOpacity>
         );
+      }
+
+      if (item.type === "shimmer") {
+        return <ShimmerCard width={cardWidth} />;
       }
 
       const { builder } = item;
@@ -233,34 +284,48 @@ const CommunityBuildersCarousel: React.FC<CommunityBuildersCarouselProps> = ({
     [cardWidth, inviteCardWidth, onUserClick],
   );
 
+  const renderLoadMoreShimmer = useCallback(
+    () => (
+      <View style={styles.loadMoreShimmerContainer}>
+        <ShimmerCard width={cardWidth} />
+        <ShimmerCard width={cardWidth} />
+      </View>
+    ),
+    [cardWidth]
+  );
+
+  const { handleViewableItemsChanged, viewabilityConfig } = useViewTracker({
+    onBatchReady: bulkRecordConstructorViews,
+  });
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>CONSTRUCTORES DE COMUNIDAD</Text>
-        {loading ? (
-          <ActivityIndicator size="small" color={COLORS.primary} />
-        ) : (
-          <Ionicons name="chevron-forward" size={22} color={COLORS.textPrimary} />
-        )}
+        <Ionicons name="chevron-forward" size={22} color={COLORS.textPrimary} />
       </View>
-      <Text style={styles.summary}>
-        Invita asesores a ILYROX y gana visibilidad dentro de la comunidad.
-      </Text>
       <FlatList
-        data={items}
+        data={displayItems}
         keyExtractor={(item) => item.id}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         renderItem={renderItem}
         onViewableItemsChanged={handleViewableItemsChanged}
-        viewabilityConfig={{
-          itemVisiblePercentThreshold: 50,
-          minimumViewTime: 1000,
-        }}
+        viewabilityConfig={viewabilityConfig}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          loadingMore ? renderLoadMoreShimmer() : null
+        }
       />
       <View style={styles.infoBanner}>
-        <Ionicons name="people-outline" size={32} color={COLORS.primary} />
+<MaterialCommunityIcons
+  name="account-group-outline"
+  size={32}
+  color={COLORS.primary}
+/>
+
         <Text style={styles.infoText}>
           Los constructores de comunidad te ayudan a{" "}
           <Text style={styles.infoStrong}>encontrar más propiedades</Text> para
@@ -305,68 +370,27 @@ const CommunityBuildersCarousel: React.FC<CommunityBuildersCarouselProps> = ({
               <InviteStep
                 icon="link-outline"
                 title="Comparte este enlace"
-                text="Generas un enlace único y lo compartes con otros asesores."
+                text={"Generas un enlace único\ny lo compartes con otros asesores."}
                 isLast={false}
               />
               <InviteStep
                 icon="phone-portrait-outline"
                 title="Instala ILYROX"
-                text="Tu invitado instala ILYROX desde la App Store o Google Play."
+                text={"Tu invitado instala ILYROX\ndesde la App Store o Google Play." }
                 isLast={false}
               />
               <InviteStep
                 icon="person-add-outline"
                 title="Registro automático"
-                text="Al abrir ILYROX por primera vez, el enlace se detecta automáticamente."
+                text={"Al abrir ILYROX por primera vez,\nel enlace se detecta automáticamente." }
                 isLast={false}
               />
               <InviteStep
                 icon="people-outline"
                 title="Ya tiene tu aprobación"
-                text="Solo necesitará 2 aprobaciones más para unirse a la comunidad."
+                text={"Solo necesitará 2 aprobaciones más\npara unirse a la comunidad."}
                 isLast
               />
-            </View>
-
-            <View style={styles.storeRow}>
-              <TouchableOpacity
-                style={styles.storePill}
-                onPress={() => openStoreUrl(appStoreUrl)}
-                disabled={!appStoreUrl}
-                accessibilityRole="button"
-                accessibilityLabel="Abrir App Store"
-              >
-                <Ionicons name="logo-apple" size={18} color={COLORS.backgroundDeep} />
-                <Text style={styles.storeText}>App Store</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.storePill}
-                onPress={() => openStoreUrl(googlePlayUrl)}
-                disabled={!googlePlayUrl}
-                accessibilityRole="button"
-                accessibilityLabel="Abrir Google Play"
-              >
-                <Ionicons name="logo-google-playstore" size={18} color={COLORS.backgroundDeep} />
-                <Text style={styles.storeText}>Google Play</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.welcomeCard}>
-              <View style={styles.logoMark}>
-                <Ionicons name="people-outline" size={28} color={COLORS.primaryDark} />
-              </View>
-              <Text style={styles.welcomeEyebrow}>BIENVENIDO</Text>
-              <Text style={styles.welcomeTitle}>
-                Descargaste{"\n"}
-                <Text style={styles.welcomeTitleAccent}>una comunidad.</Text>
-              </Text>
-              <View style={styles.welcomeDivider} />
-              <Text style={styles.welcomeSubtitle}>
-                La colaboración nunca tendrá costo.
-              </Text>
-              <Text style={styles.welcomeBody}>
-                Publicar y compartir propiedades en ILYROX siempre será gratis.
-              </Text>
             </View>
 
             <TouchableOpacity
@@ -415,7 +439,38 @@ function InviteStep({
     <View style={styles.stepRow}>
       <View style={styles.stepIconColumn}>
         <View style={styles.stepIcon}>
-          <Ionicons name={icon} size={30} color={COLORS.white} />
+                    {
+            title=="Comparte este enlace"&&
+           <Ionicons name={icon} size={30} color={COLORS.white} />
+
+          }
+          {
+            title=="Instala ILYROX"&&
+              <MaterialCommunityIcons
+                name="cellphone-arrow-down"
+                size={30}
+                color={COLORS.white}
+              />
+          }
+                    {
+            title=="Registro automático"&&
+<MaterialCommunityIcons
+  name="account-check-outline"
+  size={30}
+  color={COLORS.white}
+/>
+          }
+                              {
+            title=="Ya tiene tu aprobación"&&
+<MaterialCommunityIcons
+  name="account-group-outline"
+  size={32}
+  color={COLORS.white}
+/>
+
+          }
+
+
         </View>
         {!isLast && <View style={styles.stepLine} />}
       </View>
@@ -440,7 +495,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   title: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "800",
     color: COLORS.backgroundDeep,
     letterSpacing: 0,
@@ -453,45 +508,43 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   listContent: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 14,
     gap: 10,
+  },
+  loadMoreShimmerContainer: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 16,
   },
   inviteCard: {
     minHeight: 206,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
     borderRadius: 8,
-    padding: 12,
+    padding: 6,
     backgroundColor: COLORS.white,
     justifyContent: "space-between",
   },
-  rocketCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: COLORS.primaryTransparent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+
   inviteTitle: {
-    marginTop: 10,
-    fontSize: 15,
+    marginTop: 4,
+    fontSize: 13,
     lineHeight: 20,
     fontWeight: "800",
     color: COLORS.backgroundDeep,
   },
   inviteText: {
     marginTop: 4,
-    fontSize: 13,
+    fontSize: 12,
     lineHeight: 19,
-    fontWeight: "600",
+    fontWeight: "500",
     color: COLORS.backgroundDeep,
   },
   inviteButton: {
-    marginTop: 12,
-    minHeight: 42,
+    marginTop: 8,
+    minHeight: 36,
     borderRadius: 8,
     backgroundColor: COLORS.primaryDark,
     flexDirection: "row",
@@ -501,8 +554,7 @@ const styles = StyleSheet.create({
   },
   inviteButtonText: {
     color: COLORS.white,
-    fontWeight: "800",
-    fontSize: 13,
+    fontSize: 11
   },
   builderCard: {
     minHeight: 206,
@@ -600,8 +652,9 @@ const styles = StyleSheet.create({
   },
   infoText: {
     flex: 1,
-    fontSize: 15,
-    lineHeight: 21,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight:'500',
     color: COLORS.backgroundDeep,
   },
   infoStrong: {
@@ -638,8 +691,8 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: "absolute",
-    right: 22,
-    top: 22,
+    right: 10,
+    top: 10,
     width: 46,
     height: 46,
     borderRadius: 23,
@@ -648,11 +701,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sheetTitle: {
-    paddingRight: 48,
     textAlign: "center",
     fontSize: 33,
     lineHeight: 39,
-    fontWeight: "900",
+    fontWeight: "700",
     color: COLORS.backgroundDeep,
     letterSpacing: 0,
   },
@@ -662,8 +714,9 @@ const styles = StyleSheet.create({
   sheetSubtitle: {
     marginTop: 16,
     textAlign: "center",
-    fontSize: 17,
-    lineHeight: 25,
+    paddingHorizontal:28,
+    fontSize: 14,
+    lineHeight: 22,
     color: COLORS.textSecondary,
   },
   steps: {
@@ -697,15 +750,14 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
   },
   stepTitle: {
-    fontSize: 18,
+    fontSize: 17,
     lineHeight: 24,
-    fontWeight: "900",
+    fontWeight: "800",
     color: COLORS.backgroundDeep,
   },
   stepText: {
     marginTop: 6,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 13,
     color: COLORS.textSecondary,
   },
   storeRow: {
@@ -788,7 +840,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   shareButton: {
-    minHeight: 62,
+    minHeight: 56,
     borderRadius: 8,
     backgroundColor: COLORS.primaryDark,
     flexDirection: "row",
@@ -802,7 +854,7 @@ const styles = StyleSheet.create({
   shareButtonText: {
     color: COLORS.white,
     fontSize: 18,
-    fontWeight: "900",
+    fontWeight: "500",
   },
   noteRow: {
     marginTop: 16,
@@ -822,7 +874,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   noteText: {
-    fontSize: 13,
+    fontSize: 10,
     color: COLORS.textSecondary,
     textAlign: "center",
   },

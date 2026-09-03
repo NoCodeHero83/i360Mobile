@@ -17,6 +17,8 @@ import { AppInput } from "../../design-system/components/AppInput";
 import ConversationsSelectionModal from "./ConversationsSelectionModal";
 import TagFilterBar from "./TagFilterBar";
 import TagsModal from "./TagsModal";
+import { NotificationItem } from "../Notificaciones/NotificationItem";
+import { useRouter } from "expo-router";
 import { useTags } from "../../hooks/messaging/useTags";
 import { COLORS } from "../../constants";
 import { Avatar } from "../shared";
@@ -58,6 +60,8 @@ export default function ConversationsList({
   const [optimisticTags, setOptimisticTags] = useState<Record<string, any[]>>({});
 
   const { tags, createTag, deleteTag, updateTag, assignTag, removeTag, getConversationTags } = useTags(userId);
+
+  const router = useRouter();
 
   // Aplica el refetch en segundo plano y, al terminar, suelta el override
   // optimista de esa agrupación (la data real ya trae la etiqueta).
@@ -291,6 +295,9 @@ export default function ConversationsList({
         onToggleTag={handleToggleTag}
         onManageTags={() => setShowTagsManager(true)}
       />
+
+      {/* Notification Item */}
+      <NotificationItem onPress={() => router.push('/(stack)/NotificationHistoryScreen')} />
 
       {/* Conversations List */}
       <FlatList

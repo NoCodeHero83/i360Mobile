@@ -14,6 +14,8 @@ interface AppointmentListProps {
     onOpenRating: (id: string) => void;
     onSyncCalendar: (id: string) => void;
     onContact: (id: string) => void;
+    onEdit: (id: string) => void;
+    currentUserId?: string;
     onPropertyPress: (id: string) => void;
     onUserPress: (id: string) => void;
 }
@@ -27,6 +29,8 @@ const AppointmentList: React.FC<AppointmentListProps> = ({
     onOpenRating,
     onSyncCalendar,
     onContact,
+    onEdit,
+    currentUserId,
     onPropertyPress,
     onUserPress,
 }) => {
@@ -66,7 +70,9 @@ const AppointmentList: React.FC<AppointmentListProps> = ({
                     onOpenRating={onOpenRating}
                     onSyncCalendar={onSyncCalendar}
                     onContact={onContact}
+                    onEdit={onEdit}
                     activeTab={activeTab}
+                    currentUserId={currentUserId}
                     onPropertyPress={onPropertyPress}
                     onUserPress={onUserPress}
                 />

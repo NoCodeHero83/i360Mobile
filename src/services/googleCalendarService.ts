@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { logger } from "@/utils/logger";
+import { getSupabaseFunctionErrorDetail } from "../utils/supabaseFunctionError";
 
 const log = logger.scoped("googleCalendarService");
 
@@ -24,12 +25,15 @@ export interface CalendarAppointmentInput {
   propertyTitle?: string | null;
   location?: string | null;
   otherUserName?: string | null;
+  otherUserEmail?: string | null;
 }
 
 export interface GoogleCalendarEventResult {
   id: string;
   htmlLink?: string;
 }
+
+export type CalendarSyncAction = "create" | "update" | "delete";
 
 const getConnectionKey = (userId: string) =>
   `${CONNECTION_KEY_PREFIX}.${userId}`;
@@ -72,6 +76,14 @@ const buildEventBody = (appointment: CalendarAppointmentInput) => {
     end: {
       dateTime: end.toISOString(),
     },
+    attendees: appointment.otherUserEmail
+      ? [
+          {
+            email: appointment.otherUserEmail,
+            displayName: appointment.otherUserName || undefined,
+          },
+        ]
+      : undefined,
     reminders: {
       useDefault: true,
     },
@@ -155,7 +167,7 @@ export const googleCalendarService = {
     );
     return calendarFetch<GoogleCalendarEventResult>(
       connection.accessToken,
-      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
+      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?sendUpdates=all`,
       {
         method: "POST",
         body: JSON.stringify(buildEventBody(appointment)),
@@ -175,7 +187,7 @@ export const googleCalendarService = {
       connection.accessToken,
       `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(
         eventId,
-      )}`,
+      )}?sendUpdates=all`,
       {
         method: "PATCH",
         body: JSON.stringify(buildEventBody(appointment)),
@@ -242,5 +254,28 @@ export const googleCalendarService = {
         error,
       });
     }
+  },
+
+  async syncAppointmentOnServer(
+    action: CalendarSyncAction,
+    appointmentId: string,
+  ) {
+    const { data, error } = await supabase.functions.invoke(
+      "google-calendar-appointment-sync",
+      {
+        body: {
+          action,
+          appointmentId,
+        },
+      },
+    );
+
+    if (error) {
+      const detail = await getSupabaseFunctionErrorDetail(error);
+      log.warn("Appointment sync function failed", detail);
+      throw new Error(JSON.stringify(detail));
+    }
+
+    return data as { ok?: boolean; skipped?: string; eventId?: string };
   },
 };

@@ -13,6 +13,7 @@ import {
   ViewToken,
   RefreshControl,
   Platform,
+  TouchableOpacity,
 } from "react-native";
 import { FlashList, FlashListRef } from "@shopify/flash-list";
 import { FeedItem, User } from "../../types";
@@ -30,6 +31,8 @@ import { COLORS } from "../../constants/colors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import CommentsBottomSheet from "../modals/CommentsBottomSheet";
 import { useFeed, useUserApprovals } from "@/hooks";
+import { FeedShimmer } from "./FeedShimmer";
+import { usePropertyCacheStore } from "@/store/propertyCacheStore";
 
 interface FeedProps {
   currentUserId?: string;
@@ -86,7 +89,6 @@ const Feed: React.FC<FeedProps> = ({
   useFocusEffect(
     useCallback(() => {
       refreshUserStats();
-      setCommunityRefreshSignal((value) => value + 1);
     }, [refreshUserStats]),
   );
 
@@ -191,9 +193,11 @@ const Feed: React.FC<FeedProps> = ({
         type: item.type,
       });
       if (item.type === "property" && item.propertyDetails?.id) {
-        navigation.navigate("(stack)", {
-          screen: "property/[id]",
-          params: { id: item.propertyDetails.id },
+        const cachedData = item.propertyDetails;
+        usePropertyCacheStore.getState().setProperty(cachedData.id, cachedData);
+        router.push({
+          pathname: "/(stack)/property/[id]",
+          params: { id: cachedData.id },
         });
       } else if (item.type === "reel") {
         // `router.push` siempre monta una pantalla nueva (a diferencia de
@@ -375,11 +379,7 @@ const Feed: React.FC<FeedProps> = ({
       );
     }
     if (loading) {
-      return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>Cargando feed...</Text>
-        </View>
-      );
+      return <FeedShimmer />;
     }
     return (
       <View style={styles.emptyContainer}>

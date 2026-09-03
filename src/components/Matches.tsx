@@ -78,6 +78,8 @@ import { SearchFiltersModal } from "./map/SearchFiltersModal";
 import { usePropertyFiltersStore } from "../store/propertyFiltersStore";
 import { useMatchesStore } from "../store/matchesStore";
 import { logger } from "@/utils/logger";
+import { feedService } from "@/services/feedService";
+import { profileService } from "@/services/profileService";
 
 const log = logger.scoped("Matches");
 
@@ -147,11 +149,6 @@ const Matches: React.FC = () => {
 
       if (error) throw error;
 
-      // Filtrar propiedades propias (no mostramos matches de tus propias propiedades)
-      if (data) {
-        data = data.filter((m) => m.propiedad?.created_by !== user.id);
-      }
-
       // Si tenemos datos, obtener perfiles por separado
       if (data && data.length > 0) {
         const createdByIds = data
@@ -159,22 +156,54 @@ const Matches: React.FC = () => {
           .filter((id) => id);
 
         if (createdByIds.length > 0) {
-          const { data: perfiles, error: perfilesError } = await supabase
-            .from("perfiles")
-            .select("*")
-            .in("id", createdByIds);
+          const [
+            { data: perfiles, error: perfilesError },
+            statsRows,
+            previewsByUserId,
+          ] = await Promise.all([
+            supabase.from("perfiles").select("*").in("id", createdByIds),
+            feedService.getReviewStats(createdByIds, user.id),
+            profileService.getRecommendationPreviewsForUsers(createdByIds, user.id),
+          ]);
 
           if (!perfilesError && perfiles) {
+            const statsByUserId = new Map(
+              statsRows.map((stats) => [stats.profesional_id, stats]),
+            );
+
             data = data.map((match) => {
               if (match.propiedad && match.propiedad.created_by) {
                 const perfil = perfiles.find(
                   (p) => p.id === match.propiedad.created_by,
                 );
+                const stats = statsByUserId.get(match.propiedad.created_by);
                 return {
                   ...match,
                   propiedad: {
                     ...match.propiedad,
-                    perfil: perfil || null,
+                    perfil: perfil
+                      ? {
+                          ...perfil,
+                          rating:
+                            typeof stats?.calificacion_promedio === "number"
+                              ? stats.calificacion_promedio
+                              : 0,
+                          totalRatings:
+                            typeof stats?.total_resenas === "number"
+                              ? stats.total_resenas
+                              : 0,
+                          positiveRecommendations:
+                            typeof stats?.total_recomiendan === "number"
+                              ? stats.total_recomiendan
+                              : 0,
+                          negativeRecommendations:
+                            typeof stats?.total_no_recomiendan === "number"
+                              ? stats.total_no_recomiendan
+                              : 0,
+                          recommendedByPreview:
+                            previewsByUserId[match.propiedad.created_by] || [],
+                        }
+                      : null,
                   },
                 };
               }
@@ -419,6 +448,12 @@ const Matches: React.FC = () => {
             )}&color=fff`,
           isFollowing: false,
           role: (perfil?.rol === "agente" ? "Agent" : "User") as any,
+          ocupacion: perfil?.ocupacion || undefined,
+          rating: perfil?.rating || 0,
+          totalRatings: perfil?.totalRatings || 0,
+          positiveRecommendations: perfil?.positiveRecommendations || 0,
+          negativeRecommendations: perfil?.negativeRecommendations || 0,
+          recommendedByPreview: perfil?.recommendedByPreview || [],
         } as User,
         content: prop.descripcion || "",
         images: propertyImages,

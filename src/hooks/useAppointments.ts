@@ -33,6 +33,8 @@ export const useAppointments = () => {
     const [loading, setLoading] = useState(true);
     const [showRateModal, setShowRateModal] = useState(false);
     const [rateApptId, setRateApptId] = useState<string | null>(null);
+    const [editingAppointment, setEditingAppointment] =
+        useState<AppointmentItem | null>(null);
 
     useEffect(() => {
         if (profile?.id) {
@@ -51,8 +53,8 @@ export const useAppointments = () => {
                 .select(
                     `
           *,
-          agente:perfiles!agente_id(id, nombre, apellido_paterno, foto, rol, prefijo_celular, celular),
-          cliente:perfiles!cliente_id(id, nombre, apellido_paterno, foto, rol, prefijo_celular, celular),
+          agente:perfiles!agente_id(id, nombre, apellido_paterno, foto, rol, prefijo_celular, celular, email),
+          cliente:perfiles!cliente_id(id, nombre, apellido_paterno, foto, rol, prefijo_celular, celular, email),
           propiedad:propiedades(id, tipo, subtipo, ciudad, fotos),
           resenas:resenas(id, revisor_id, calificacion_general)
         `,
@@ -97,6 +99,7 @@ export const useAppointments = () => {
                                 }`.trim(),
                             avatar: otherUser.foto,
                             role: isAgente ? "Cliente" : "Agente",
+                            email: otherUser.email,
                         },
                         propertyId: cita.propiedad_id,
                         propertyTitle: cita.propiedad
@@ -121,6 +124,46 @@ export const useAppointments = () => {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!profile?.id) return;
+
+        const channel = supabase
+            .channel(`appointments-list-${profile.id}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "citas",
+                    filter: `agente_id=eq.${profile.id}`,
+                },
+                () => {
+                    loadAppointments();
+                },
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "citas",
+                    filter: `cliente_id=eq.${profile.id}`,
+                },
+                () => {
+                    loadAppointments();
+                },
+            )
+            .subscribe((status) => {
+                if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+                    log.warn("Realtime de lista de citas no disponible", status);
+                }
+            });
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [profile?.id, activeTab]);
 
     const formatDate = (dateStr: string) => {
         const date = new Date(dateStr);
@@ -170,6 +213,7 @@ export const useAppointments = () => {
                 const success = await handleCancelAppointment(
                     id,
                     appointment?.google_event_id,
+                    appointment?.agente_id,
                 );
                 if (success) {
                     await loadAppointments();
@@ -184,32 +228,52 @@ export const useAppointments = () => {
         if (!appointment || !profile?.id) return;
 
         try {
-            const connection = await ensureConnection();
-            if (!connection) return;
+            if (profile.id === appointment.agente_id) {
+                await ensureConnection();
+            }
 
-            const payload = {
-                id: appointment.id,
-                fecha: appointment.fecha,
-                hora: appointment.hora,
-                tipo: appointment.tipo,
-                descripcion: appointment.descripcion,
-                propertyTitle: appointment.propertyTitle,
-                location: appointment.location,
-                otherUserName: appointment.user.name,
-            };
-
-            const event = appointment.google_event_id
-                ? await googleCalendarService.updateEvent(
-                    connection,
-                    appointment.google_event_id,
-                    payload,
-                )
-                : await googleCalendarService.createEvent(connection, payload);
-
-            await googleCalendarService.attachEventToAppointment(
+            const result = await googleCalendarService.syncAppointmentOnServer(
+                appointment.google_event_id ? "update" : "create",
                 appointment.id,
-                event.id,
             );
+
+            if (!result?.ok && profile.id !== appointment.agente_id) {
+                showToast(
+                    "El asesor debe conectar Google Calendar para sincronizar esta cita",
+                    "info",
+                );
+                return;
+            }
+
+            if (!result?.ok) {
+                const connection = await ensureConnection();
+                if (!connection) return;
+
+const payload = {
+                    id: appointment.id,
+                    fecha: appointment.fecha,
+                    hora: appointment.hora,
+                    tipo: appointment.tipo,
+                    descripcion: appointment.descripcion,
+                    propertyTitle: appointment.propertyTitle,
+                    location: appointment.location,
+                    otherUserName: appointment.user.name,
+                    otherUserEmail: appointment.user.email,
+                };
+
+                const event = appointment.google_event_id
+                    ? await googleCalendarService.updateEvent(
+                        connection,
+                        appointment.google_event_id,
+                        payload,
+                    )
+                    : await googleCalendarService.createEvent(connection, payload);
+
+                await googleCalendarService.attachEventToAppointment(
+                    appointment.id,
+                    event.id,
+                );
+            }
             await loadAppointments();
             showToast("Cita sincronizada con Google Calendar", "success");
         } catch (error: any) {
@@ -224,6 +288,28 @@ export const useAppointments = () => {
     const handleOpenRating = (id: string) => {
         setRateApptId(id);
         setShowRateModal(true);
+    };
+
+    const handleEditAppointment = (id: string) => {
+        if (!profile?.id) return;
+
+        const appointment = appointments.find((appt) => appt.id === id);
+        if (!appointment) return;
+
+        if (appointment.created_by !== profile.id) {
+            showToast("Solo quien creó la cita puede editarla", "info");
+            return;
+        }
+
+        setEditingAppointment(appointment);
+    };
+
+    const closeEditModal = () => {
+        setEditingAppointment(null);
+    };
+
+    const handleAppointmentUpdated = async () => {
+        await loadAppointments();
     };
 
     const handleSubmitRating = async (
@@ -380,15 +466,19 @@ export const useAppointments = () => {
         appointments,
         loading,
         showRateModal,
+        editingAppointment,
         rateTarget,
         handleMarkComplete,
         handleMarkCancel,
         handleOpenRating,
+        handleEditAppointment,
         handleSyncCalendar,
         handleSubmitRating,
+        handleAppointmentUpdated,
         handleContactPress,
         handlePropertyPress,
         handleUserPress,
         closeRatingModal,
+        closeEditModal,
     };
 };

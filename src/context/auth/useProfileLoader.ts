@@ -26,7 +26,7 @@ export const useProfileLoader = () => {
    */
   const loadProfile = useCallback(async (
     userId: string,
-    maxRetries = 3,
+    maxRetries = 1,
   ): Promise<perfiles | null> => {
     if (!userId) {
       log.warn("loadProfile: No userId provided");
@@ -50,8 +50,7 @@ export const useProfileLoader = () => {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
           if (attempt > 0) {
-            // Backoff exponencial: 2s, 4s, 8s
-            const delay = Math.pow(2, attempt) * 1000;
+            const delay = Math.pow(2, attempt) * 500;
             await new Promise((resolve) => setTimeout(resolve, delay));
           }
 

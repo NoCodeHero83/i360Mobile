@@ -2,10 +2,10 @@
   "expo": {
     "name": "ilyrox",
     "slug": "ilyrox",
-    "version": "1.0.3",
-    "runtimeVersion": "1.0.0",
+    "version": "1.0.4",
+    "runtimeVersion": "1.0.4",
     "orientation": "portrait",
-    "icon": "./src/assets/Icon-size.png",
+    "icon": "./src/assets/icon_ilyrox.jpg",
     "userInterfaceStyle": "light",
   "scheme": [
       "ilyroxapp",
@@ -45,7 +45,8 @@
       "associatedDomains": [
         "applinks:posts.ilyrox.com",
         "applinks:ilyrox.app",
-        "applinks:*.ilyrox.app"
+        "applinks:*.ilyrox.app",
+        "applinks:www.ilyrox.com"
       ]
     },
     "androidStatusBar": {
@@ -61,8 +62,8 @@
         }
       },
       "adaptiveIcon": {
-        "foregroundImage": "./src/assets/Icon-size.png",
-        "backgroundColor": "#FFFFFF"
+        // "foregroundImage": "./src/assets/icon_ilyrox.jpg",
+        "backgroundImage": "./src/assets/icon_ilyrox.jpg"
       },
       "package": "com.ilyrox.app",
       "intentFilters": [
@@ -70,6 +71,11 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
+            {
+              "scheme": "https",
+              "host": "www.ilyrox.com",
+              "pathPrefix": "/invite"
+            },
             {
               "scheme": "https",
               "host": "posts.ilyrox.com"
@@ -96,9 +102,21 @@
       ]
     },
     "web": {
-      "favicon": "./src/assets/Icon-size.png"
+      "favicon": "./src/assets/icon_ilyrox.jpg"
     },
     "plugins": [
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production"
+        }
+      ],
+      [
+        "./plugins/withNotificationSound",
+        {
+          "sounds": ["audio_ilyrox.wav"]
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -109,12 +127,6 @@
             "backgroundColor": "#FFFFFF"
           },
           "imageWidth": 200
-        }
-      ],
-      [
-        "onesignal-expo-plugin",
-        {
-          "mode": "production"
         }
       ],
       "expo-video",
@@ -153,6 +165,6 @@
       },
       "router": {}
     },
-    "owner": "imightbewrong"
+    "owner": "weareallwrongs-team"
   }
 }

@@ -27,6 +27,7 @@ import { logger } from "@/utils/logger";
 import DatePickerField from "./DatePickerField";
 import TimePickerField from "./TimePickerField";
 import AppointmentTypeSelector from "./AppointmentTypeSelector";
+import { AppointmentItem } from "./appointmentTypes";
 import { createAppointmentStyles as styles } from "./createAppointmentStyles";
 
 const log = logger.scoped("CreateAppointmentModal");
@@ -34,9 +35,12 @@ const log = logger.scoped("CreateAppointmentModal");
 interface CreateAppointmentModalProps {
   visible: boolean;
   onClose: () => void;
-  propertyId: string;
-  otherUserId: string;
+  propertyId?: string;
+  otherUserId?: string;
   currentUserId: string;
+  mode?: "create" | "edit";
+  appointment?: AppointmentItem | null;
+  onSaved?: () => void;
 }
 
 export default function CreateAppointmentModal({
@@ -45,6 +49,9 @@ export default function CreateAppointmentModal({
   propertyId,
   otherUserId,
   currentUserId,
+  mode = "create",
+  appointment = null,
+  onSaved,
 }: CreateAppointmentModalProps) {
   const insets = useSafeAreaInsets();
   const { showModal } = useModal();
@@ -56,10 +63,19 @@ export default function CreateAppointmentModal({
   const [horaText, setHoraText] = useState("");
   const [tipo, setTipo] = useState<string>("visita");
   const [descripcion, setDescripcion] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const isEditMode = mode === "edit";
 
   React.useEffect(() => {
     if (visible) {
+      if (isEditMode && appointment) {
+        setFechaText(appointment.fecha);
+        setHoraText((appointment.hora || "09:00").slice(0, 5));
+        setTipo(appointment.tipo || "visita");
+        setDescripcion(appointment.descripcion ?? "");
+        return;
+      }
+
       const today = new Date();
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -70,7 +86,7 @@ export default function CreateAppointmentModal({
       setFechaText(`${year}-${month}-${day}`);
       setHoraText("09:00");
     }
-  }, [visible]);
+  }, [appointment, isEditMode, visible]);
 
   const validateDate = (dateStr: string): boolean => {
     const regex = /^\d{4}-\d{2}-\d{2}$/;
@@ -88,8 +104,12 @@ export default function CreateAppointmentModal({
     return regex.test(timeStr);
   };
 
-  const determineRoles = () =>
-    appointmentService.resolveRoles(currentUserId, otherUserId);
+  const determineRoles = () => {
+    if (!otherUserId) {
+      throw new Error("No se pudo identificar al usuario de la cita");
+    }
+    return appointmentService.resolveRoles(currentUserId, otherUserId);
+  };
 
   const resetForm = () => {
     const tomorrow = new Date();
@@ -103,7 +123,7 @@ export default function CreateAppointmentModal({
     setDescripcion("");
   };
 
-  const handleCreateAppointment = async () => {
+  const handleSaveAppointment = async () => {
     if (!validateDate(fechaText)) {
       showModal({
         title: "Error",
@@ -124,7 +144,46 @@ export default function CreateAppointmentModal({
     }
 
     try {
-      setIsCreating(true);
+      setIsSaving(true);
+      const horaStr = `${horaText}:00`;
+
+      if (isEditMode) {
+        if (!appointment) {
+          throw new Error("No se pudo cargar la cita para editar");
+        }
+
+        await appointmentService.updateAppointment(appointment.id, {
+          fecha: fechaText,
+          hora: horaStr,
+          tipo,
+          descripcion: descripcion.trim() || null,
+        });
+
+        try {
+          await googleCalendarService.syncAppointmentOnServer(
+            "update",
+            appointment.id,
+          );
+          showToast(
+            "Cita actualizada y sincronizada con Google Calendar",
+            "success",
+          );
+        } catch (calendarError) {
+          log.warn("Could not sync updated appointment", calendarError);
+          showToast(
+            "Cita actualizada. No se pudo sincronizar Google Calendar",
+            "info",
+          );
+        }
+
+        onSaved?.();
+        onClose();
+        return;
+      }
+
+      if (!propertyId || !otherUserId) {
+        throw new Error("No se pudo cargar la información para crear la cita");
+      }
 
       const { agenteId, clienteId } = await determineRoles();
 
@@ -136,8 +195,6 @@ export default function CreateAppointmentModal({
         });
         return;
       }
-
-      const horaStr = `${horaText}:00`;
 
       const createdAppointment = await appointmentService.createAppointment({
         propertyId,
@@ -153,6 +210,7 @@ export default function CreateAppointmentModal({
       let propertyTitle = "";
       let location = "";
       let otherUserName = "";
+      let otherUserEmail = "";
 
       try {
         const propInfo =
@@ -166,13 +224,28 @@ export default function CreateAppointmentModal({
         if (userData) {
           otherUserName =
             `${userData.nombre} ${userData.apellido_paterno}`.trim();
+          otherUserEmail = userData.email || "";
         }
       } catch (err) {
         log.warn("Could not fetch details for calendar", err);
       }
 
-      if (currentUserId === agenteId) {
-        try {
+      try {
+        if (currentUserId === agenteId) {
+          await ensureConnection();
+        }
+
+        const result = await googleCalendarService.syncAppointmentOnServer(
+          "create",
+          createdAppointment.id,
+        );
+
+        if (result?.ok) {
+          showToast(
+            "Cita creada y sincronizada con Google Calendar",
+            "success",
+          );
+        } else if (currentUserId === agenteId) {
           const connection = await ensureConnection();
           if (connection) {
             const event = await googleCalendarService.createEvent(connection, {
@@ -184,6 +257,7 @@ export default function CreateAppointmentModal({
               propertyTitle,
               location,
               otherUserName,
+              otherUserEmail: otherUserEmail || null,
             });
             await googleCalendarService.attachEventToAppointment(
               createdAppointment.id,
@@ -196,14 +270,11 @@ export default function CreateAppointmentModal({
           } else {
             showToast("Cita creada exitosamente", "success");
           }
-        } catch (calendarError) {
-          log.warn("Could not sync appointment with Google Calendar", calendarError);
-          showToast(
-            "La cita se creó, pero no se pudo sincronizar con Google Calendar",
-            "info",
-          );
+        } else {
+          showToast("Cita creada exitosamente", "success");
         }
-      } else {
+      } catch (calendarError) {
+        log.warn("Could not sync appointment with Google Calendar", calendarError);
         showToast("Cita creada exitosamente", "success");
       }
 
@@ -213,7 +284,7 @@ export default function CreateAppointmentModal({
       log.error("Error creating appointment:", error);
       showToast(error.message || "Error al crear la cita", "error");
     } finally {
-      setIsCreating(false);
+      setIsSaving(false);
     }
   };
 
@@ -244,11 +315,13 @@ export default function CreateAppointmentModal({
             <View style={styles.header}>
               <View style={styles.headerTitle}>
                 <Ionicons name="calendar" size={22} color={COLORS.primary} />
-                <Text style={styles.title}>Nueva Cita</Text>
+                <Text style={styles.title}>
+                  {isEditMode ? "Editar Cita" : "Nueva Cita"}
+                </Text>
               </View>
               <TouchableOpacity
                 onPress={onClose}
-                disabled={isCreating}
+                disabled={isSaving}
                 style={styles.closeButton}
               >
                 <Ionicons name="close" size={24} color={COLORS.textSecondary} />
@@ -266,19 +339,19 @@ export default function CreateAppointmentModal({
               <DatePickerField
                 fechaText={fechaText}
                 onDateChange={setFechaText}
-                disabled={isCreating}
+                disabled={isSaving}
               />
 
               <TimePickerField
                 horaText={horaText}
                 onTimeChange={setHoraText}
-                disabled={isCreating}
+                disabled={isSaving}
               />
 
               <AppointmentTypeSelector
                 selectedType={tipo}
                 onTypeChange={setTipo}
-                disabled={isCreating}
+                disabled={isSaving}
               />
 
               <View style={styles.field}>
@@ -299,7 +372,7 @@ export default function CreateAppointmentModal({
                   onChangeText={setDescripcion}
                   multiline
                   numberOfLines={4}
-                  editable={!isCreating}
+                  editable={!isSaving}
                   textAlignVertical="top"
                   onFocus={() => handleInputFocus(350)}
                 />
@@ -317,7 +390,7 @@ export default function CreateAppointmentModal({
               <TouchableOpacity
                 style={[styles.button, styles.buttonSecondary]}
                 onPress={onClose}
-                disabled={isCreating}
+                disabled={isSaving}
                 activeOpacity={0.7}
               >
                 <Text style={styles.buttonSecondaryText}>Cancelar</Text>
@@ -327,13 +400,13 @@ export default function CreateAppointmentModal({
                 style={[
                   styles.button,
                   styles.buttonPrimary,
-                  isCreating && styles.buttonDisabled,
+                  isSaving && styles.buttonDisabled,
                 ]}
-                onPress={handleCreateAppointment}
-                disabled={isCreating}
+                onPress={handleSaveAppointment}
+                disabled={isSaving}
                 activeOpacity={0.8}
               >
-                {isCreating ? (
+                {isSaving ? (
                   <ActivityIndicator size="small" color={COLORS.white} />
                 ) : (
                   <>
@@ -342,7 +415,9 @@ export default function CreateAppointmentModal({
                       size={18}
                       color={COLORS.white}
                     />
-                    <Text style={styles.buttonPrimaryText}>Crear Cita</Text>
+                    <Text style={styles.buttonPrimaryText}>
+                      {isEditMode ? "Guardar cambios" : "Crear Cita"}
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>

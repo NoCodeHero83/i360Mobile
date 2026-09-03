@@ -254,6 +254,14 @@ const SettingsScreen: React.FC = () => {
       },
     },
     {
+      id: "tokko_broker",
+      title: "Toko Broker",
+      icon: "cloud-outline",
+      onPress: () => {
+        router.push("/tokko-broker");
+      },
+    },
+    {
       id: "support",
       title: "Soporte",
       icon: "help-circle-outline",

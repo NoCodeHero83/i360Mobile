@@ -28,6 +28,7 @@ import * as Linking from "expo-linking";
 import { AppProvider } from "@/context/AppContext";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ToastProvider } from "@/context/ToastContext";
+import { NotificationProvider } from "@/context/NotificationContext";
 
 import { ModalProvider } from "@/context/ModalContext";
 import { SafeInsetsProvider } from "@/context/SafeInsetsContext";
@@ -38,8 +39,17 @@ import { useVersionCheck } from "@/hooks/useVersionCheck";
 import { useOTAUpdates } from "@/hooks/useOTAUpdates";
 import { VersionUpdateModal } from "@/components/modals/VersionUpdateModal";
 import { supabase } from "@/lib/supabase";
-import { storeInviteCodeFromUrl } from "@/services/communityService";
+import { storeInviteCodeFromUrl, captureInviteFromDeviceMatch, captureInviteFromFingerprint } from "@/services/communityService";
 import { logger } from "@/utils/logger";
+
+if (Platform.OS !== "web") {
+  OneSignal.initialize(process.env.EXPO_PUBLIC_ONESIGNAL_APP_ID!);
+  OneSignal.Notifications.requestPermission(true);
+  OneSignal.Notifications.addEventListener("click", (event: any) => {
+    const data = event?.notification?.additionalData;
+    if (data) emitNotificationClick(data);
+  });
+}
 
 // Ignore common warnings that do not affect functionality
 LogBox.ignoreLogs([
@@ -194,16 +204,6 @@ function takePendingNotificationClick() {
   return data;
 }
 
-// OneSignal init
-if (Platform.OS !== "web") {
-  OneSignal.initialize(process.env.EXPO_PUBLIC_ONESIGNAL_APP_ID!);
-  OneSignal.Notifications.requestPermission(true);
-  OneSignal.Notifications.addEventListener("click", (event: any) => {
-    const data = event?.notification?.additionalData;
-    if (data) emitNotificationClick(data);
-  });
-}
-
 const queryClient = new QueryClient();
 
 /**
@@ -257,10 +257,10 @@ function RootLayoutNav() {
   const {
     updateRequired,
     versionInfo,
-    loading: versionLoading,
   } = useVersionCheck();
   const segments = useSegments();
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
 
   // Toque en una push pendiente de navegar.
   const [notificationClick, setNotificationClick] = useState<any>(null);
@@ -279,7 +279,7 @@ function RootLayoutNav() {
   // Verifica/aplica actualizaciones OTA (EAS Update) silenciosamente al iniciar.
   useOTAUpdates();
 
-  const loading = authLoading || versionLoading || !fontsReady;
+  const loading = authLoading || !fontsReady;
 
   // Mostrar notificaciones aunque la app esté en foreground — efecto estable sin dependencias
   useEffect(() => {
@@ -311,18 +311,66 @@ function RootLayoutNav() {
     let mounted = true;
 
     const captureUrl = async (url: string | null) => {
-      if (!url) return;
+      if (!url) return false;
       try {
-        await storeInviteCodeFromUrl(url);
+        const code = await storeInviteCodeFromUrl(url);
+        if (code) {
+          logger.info("[invites] captureUrl: Código detectado de URL, navegando a welcome", { code });
+          router.replace("/(auth)/welcome/communityWelcome");
+          return true;
+        }
+        return false;
       } catch (error) {
         logger.warn("[invites] no se pudo guardar el enlace de invitación:", error);
+        return false;
       }
     };
 
-    Linking.getInitialURL().then((url) => {
-      if (mounted) captureUrl(url);
-    });
+    const captureDeviceMatch = async () => {
+      if (session) {
+        logger.info("[invites] captureDeviceMatch: Usuario ya logueado, omitiendo búsqueda de invitación");
+        return;
+      }
+      const isWelcome = segments.includes("communityWelcome");
+      if (isWelcome) {
+        logger.info("[invites] captureDeviceMatch: Ya estamos en welcome, omitiendo");
+        return;
+      }
+      if (!rootNavigationState?.key) {
+        logger.info("[invites] captureDeviceMatch: Navigator no listo, omitiendo");
+        return;
+      }
+      try {
+        logger.info("[invites] captureDeviceMatch: Usuario no logueado, iniciando búsqueda");
+        const byToken = await captureInviteFromDeviceMatch();
+        if (byToken) {
+          logger.info("[invites] captureDeviceMatch: Encontrado por device_token, navegando a welcome", { code: byToken });
+          router.replace("/(auth)/welcome/communityWelcome");
+          return;
+        }
+        logger.info("[invites] captureDeviceMatch: No encontrado por device_token, intentando fingerprint");
+        const byFingerprint = await captureInviteFromFingerprint();
+        if (byFingerprint) {
+          logger.info("[invites] captureDeviceMatch: Encontrado por fingerprint, navegando a welcome", { code: byFingerprint });
+          router.replace("/(auth)/welcome/communityWelcome");
+        }
+      } catch (error) {
+        logger.warn("[invites] no se pudo verificar el dispositivo:", error);
+      }
+    };
 
+    Linking.getInitialURL().then(async (url) => {
+      if (!mounted) return;
+      logger.info("[invites] getInitialURL result:", { url: url ?? "null", isLoggedIn: !!session });
+      if (url) {
+        const hasCode = await captureUrl(url);
+        if (!hasCode) {
+          await captureDeviceMatch();
+        }
+      } else {
+        await captureDeviceMatch();
+      }
+    });
     const subscription = Linking.addEventListener("url", ({ url }) => {
       captureUrl(url);
     });
@@ -331,7 +379,7 @@ function RootLayoutNav() {
       mounted = false;
       subscription.remove();
     };
-  }, []);
+  }, [session]);
 
   // Global StatusBar setup
   useEffect(() => {
@@ -374,7 +422,6 @@ function RootLayoutNav() {
    *   el efecto de sesión de arriba hace `router.replace("/(tabs)")`, que nos
    *   pisaría. Esperando a salir de (auth), ese replace ya ocurrió.
    */
-  const rootNavigationState = useRootNavigationState();
 
   useEffect(() => {
     if (!notificationClick) return;
@@ -430,11 +477,14 @@ function RootLayoutNav() {
 
   // Main Stack incorporating all groups
   return (
-    <>
+    <NotificationProvider userId={profile?.id || null}>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(stack)" />
+        <Stack.Screen name="invite" />
+        <Stack.Screen name="invite/[code]" />
+        <Stack.Screen name="p/[id]" />
         {/* Los formularios de creación guardan todo en estado local: un gesto
             lateral accidental hacía pop de la ruta y borraba lo llenado sin
             preguntar. La salida se confirma desde el propio formulario. */}
@@ -457,6 +507,6 @@ function RootLayoutNav() {
           storeUrl={versionInfo.store_url}
         />
       )}
-    </>
+    </NotificationProvider>
   );
 }

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   RefreshControl,
   ScrollView,
@@ -28,12 +27,14 @@ import { parseImages } from "@/utils/imageParser";
 import { formatDateShort } from "@/utils/dateFormatter";
 import { formatPropertyAge } from "@/utils/propertyAge";
 import { router } from "expo-router";
+import { CachedPropertyData } from "@/store/propertyCacheStore";
 
 import { PropertyDetailImages } from "./PropertyDetailImages";
 import { PropertyFinancialSection } from "./PropertyFinancialSection";
 import { PropertyTypeDetails } from "./PropertyTypeDetails";
 import { PropertyOwnerContact } from "./PropertyOwnerContact";
 import { PropertyPrivateOwner } from "./PropertyPrivateOwner";
+import { PropertyDetailShimmer } from "./PropertyDetailShimmer";
 import { propertyDetailStyles as styles } from "./propertyDetailStyles";
 import { getCamposVisibles } from "@/constants/propertyData";
 
@@ -44,6 +45,7 @@ interface PropertyDetailProps {
   onContact?: (ownerId: string, propertyId: string) => void;
   onRefresh?: () => void;
   sinDatos?: boolean;
+  initialData?: CachedPropertyData | null;
   /** Cerrar la pantalla cuando se abre dentro de un <Modal> (Perfil, Matches):
       ahí `router.back()` no cierra el modal. Si no se pasa, cae a router.back(). */
   onClose?: () => void;
@@ -55,6 +57,7 @@ const PropertyDetail: React.FC<PropertyDetailProps> = ({
   onContact,
   onRefresh,
   sinDatos,
+  initialData,
   onClose,
 }) => {
   const handleClose = onClose ?? (() => router.back());
@@ -81,6 +84,7 @@ const PropertyDetail: React.FC<PropertyDetailProps> = ({
   const { currentUser } = useApp();
   const { propertyDetails, loading, refetch } = usePropertyDetails(
     propertyId || "",
+    { initialData },
   );
   const [, setProperty] = useState<any>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -125,11 +129,9 @@ const PropertyDetail: React.FC<PropertyDetailProps> = ({
     }
   }, [propertyDetails]);
 
-  if (loading) {
+  if (loading && !propertyDetails) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
+      <PropertyDetailShimmer />
     );
   }
 
@@ -199,10 +201,10 @@ const PropertyDetail: React.FC<PropertyDetailProps> = ({
           currentImageIndex={currentImageIndex}
           onImageIndexChange={setCurrentImageIndex}
           onBack={handleClose}
-          feedItemId={propertyDetails.feed_items.id}
-          feedItemLikes={propertyDetails.feed_items.likes_count || 0}
-          feedItemComments={propertyDetails.feed_items.comentarios_count || 0}
-          feedItemShares={propertyDetails.feed_items.compartidos_count || 0}
+          feedItemId={propertyDetails.feed_items?.id ?? ""}
+          feedItemLikes={propertyDetails.feed_items?.likes_count ?? 0}
+          feedItemComments={propertyDetails.feed_items?.comentarios_count ?? 0}
+          feedItemShares={propertyDetails.feed_items?.compartidos_count ?? 0}
           userId={user?.id}
           propertyId={propertyDetails.id}
           shareTitle={`Propiedad: ${propertyDetails.subtipo} en ${propertyDetails.municipio}`}
@@ -267,17 +269,17 @@ const PropertyDetail: React.FC<PropertyDetailProps> = ({
             </View>
 
             <Text style={styles.title}>
-              {propertyDetails.subtipo} en {propertyDetails.municipio}
+              {propertyDetails.subtipo} en {propertyDetails.municipio || propertyDetails.ciudad || 'Sin ubicación'}
             </Text>
 
             <View style={styles.priceContainer}>
               {operations.map((op: any, idx: number) => (
                 <View key={idx} style={styles.priceBadge}>
                   <Text style={styles.operationType}>
-                    {op.tipo_operacion === "venta" ? "Venta" : "Renta"}
+                    {op.tipo_operacion === "venta" || op.tipo_operacion=="Sale" ? "Venta" : "Renta"}
                   </Text>
                   <Text style={styles.price}>
-                    {op.moneda} {op.precio.toLocaleString("es-MX")}
+                    {op.moneda || 'MXN'} {op.precio ? op.precio.toLocaleString("es-MX") : 'Consultar'}
                   </Text>
                 </View>
               ))}
@@ -298,7 +300,7 @@ const PropertyDetail: React.FC<PropertyDetailProps> = ({
                     }, `
                   : ""}
                 {propertyDetails.colonia ? propertyDetails.colonia + ", " : ""}
-                {propertyDetails.municipio}, {propertyDetails.ciudad}
+                {propertyDetails.municipio || propertyDetails.ciudad || ''}
               </Text>
             </View>
           </View>
@@ -516,7 +518,7 @@ const PropertyDetail: React.FC<PropertyDetailProps> = ({
       <CommentsBottomSheet
         visible={showComments}
         onClose={() => setShowComments(false)}
-        feedItemId={propertyDetails.feed_items.id}
+        feedItemId={propertyDetails.feed_items?.id ?? ""}
         currentUserId={user?.id}
       />
 

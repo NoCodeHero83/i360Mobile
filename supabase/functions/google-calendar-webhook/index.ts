@@ -12,6 +12,15 @@ const GOOGLE_CALENDAR_WEBHOOK_TOKEN =
 const ONESIGNAL_APP_ID = Deno.env.get("ONESIGNAL_APP_ID") ?? "";
 const ONESIGNAL_REST_API_KEY = Deno.env.get("ONESIGNAL_REST_API_KEY") ?? "";
 
+const DEFAULT_CALENDAR_ID = "primary";
+const SERVER_SYNC_ORIGIN = "ilyrox-server";
+const TYPE_LABELS: Record<string, string> = {
+  visita: "Visita",
+  llamada: "Llamada",
+  videollamada: "Videollamada",
+  reunion: "Reunión",
+};
+
 type Connection = {
   user_id: string;
   calendar_id: string;
@@ -20,6 +29,27 @@ type Connection = {
   expires_at: string;
   sync_token: string | null;
   channel_id: string | null;
+};
+
+type Appointment = {
+  id: string;
+  agente_id: string;
+  cliente_id: string;
+  propiedad_id: string | null;
+  fecha: string;
+  hora: string;
+  tipo: string;
+  descripcion: string | null;
+  estado: string;
+  google_event_id: string | null;
+  google_calendar_id: string | null;
+};
+
+type StoredEvent = {
+  cita_id: string;
+  user_id: string;
+  google_event_id: string;
+  google_calendar_id: string;
 };
 
 type GoogleEvent = {
@@ -39,13 +69,28 @@ function json(body: unknown, status = 200) {
   });
 }
 
+function padTime(time: string) {
+  const [hours = "09", minutes = "00"] = time.split(":");
+  return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}:00`;
+}
+
+function addOneHour(date: Date) {
+  return new Date(date.getTime() + 60 * 60 * 1000);
+}
+
+function getParticipantIds(appointment: Appointment) {
+  return Array.from(
+    new Set([appointment.agente_id, appointment.cliente_id].filter(Boolean)),
+  );
+}
+
 async function refreshAccessToken(db: any, connection: Connection) {
   if (new Date(connection.expires_at).getTime() > Date.now() + 60_000) {
     return connection.access_token;
   }
 
   if (!connection.refresh_token) {
-    throw new Error("missing_refresh_token");
+    throw new Error(`missing_refresh_token:${connection.user_id}`);
   }
 
   const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -113,10 +158,246 @@ function getDateAndTime(event: GoogleEvent) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
 
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+
   return {
-    fecha: date.toISOString().slice(0, 10),
-    hora: date.toISOString().slice(11, 19),
+    fecha: `${year}-${month}-${day}`,
+    hora: `${hours}:${minutes}:${seconds}`,
   };
+}
+
+async function getAppointment(db: any, appointmentId: string) {
+  const { data, error } = await db
+    .from("citas")
+    .select(
+      "id, agente_id, cliente_id, propiedad_id, fecha, hora, tipo, descripcion, estado, google_event_id, google_calendar_id",
+    )
+    .eq("id", appointmentId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as Appointment | null;
+}
+
+async function getConnectionsByUserId(db: any, userIds: string[]) {
+  const { data, error } = await db
+    .from("google_calendar_connections")
+    .select("*")
+    .in("user_id", userIds);
+
+  if (error) throw error;
+
+  return new Map(
+    ((data ?? []) as Connection[]).map((connection) => [
+      connection.user_id,
+      connection,
+    ]),
+  );
+}
+
+async function getStoredEventsByUserId(db: any, appointment: Appointment) {
+  const { data, error } = await db
+    .from("cita_google_events")
+    .select("*")
+    .eq("cita_id", appointment.id);
+
+  if (error) throw error;
+
+  const map = new Map(
+    ((data ?? []) as StoredEvent[]).map((event) => [event.user_id, event]),
+  );
+
+  if (appointment.google_event_id && !map.has(appointment.agente_id)) {
+    map.set(appointment.agente_id, {
+      cita_id: appointment.id,
+      user_id: appointment.agente_id,
+      google_event_id: appointment.google_event_id,
+      google_calendar_id: appointment.google_calendar_id || DEFAULT_CALENDAR_ID,
+    });
+  }
+
+  return map;
+}
+
+async function getPropertyInfo(db: any, propertyId: string | null) {
+  if (!propertyId) return { title: "Cita Ilyrox", location: "" };
+
+  const { data } = await db
+    .from("propiedades")
+    .select("tipo, subtipo, calle, numero_exterior, ciudad, codigo_postal")
+    .eq("id", propertyId)
+    .maybeSingle();
+
+  if (!data) return { title: "Cita Ilyrox", location: "" };
+
+  return {
+    title:
+      [data.tipo, data.subtipo, data.ciudad].filter(Boolean).join(" en ") ||
+      "Propiedad",
+    location: [data.calle, data.numero_exterior, data.ciudad, data.codigo_postal]
+      .filter(Boolean)
+      .join(", "),
+  };
+}
+
+async function getUserName(db: any, userId: string) {
+  const { data } = await db
+    .from("perfiles")
+    .select("nombre, apellido_paterno")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return [data?.nombre, data?.apellido_paterno].filter(Boolean).join(" ");
+}
+
+async function buildEventBody(
+  db: any,
+  appointment: Appointment,
+  ownerUserId: string,
+) {
+  const property = await getPropertyInfo(db, appointment.propiedad_id);
+  const otherUserId =
+    ownerUserId === appointment.agente_id
+      ? appointment.cliente_id
+      : appointment.agente_id;
+  const otherName = await getUserName(db, otherUserId);
+  const start = new Date(`${appointment.fecha}T${padTime(appointment.hora)}`);
+  const end = addOneHour(start);
+  const typeLabel = TYPE_LABELS[appointment.tipo] ?? appointment.tipo;
+
+  return {
+    summary: `${typeLabel} - ${property.title}`,
+    location: property.location || undefined,
+    description: [
+      "Cita creada desde Ilyrox.",
+      otherName ? `Con: ${otherName}` : undefined,
+      appointment.descripcion ? `Detalles: ${appointment.descripcion}` : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    start: { dateTime: start.toISOString() },
+    end: { dateTime: end.toISOString() },
+    reminders: { useDefault: true },
+    extendedProperties: {
+      private: {
+        ilyroxAppointmentId: appointment.id,
+        ilyroxCalendarOwnerId: ownerUserId,
+        ilyroxSyncOrigin: SERVER_SYNC_ORIGIN,
+      },
+    },
+  };
+}
+
+async function updateOtherCalendarEvents(
+  db: any,
+  appointment: Appointment,
+  sourceUserId: string,
+) {
+  const participantIds = getParticipantIds(appointment).filter(
+    (userId) => userId !== sourceUserId,
+  );
+  const connections = await getConnectionsByUserId(db, participantIds);
+  const storedEvents = await getStoredEventsByUserId(db, appointment);
+
+  for (const userId of participantIds) {
+    const connection = connections.get(userId);
+    const storedEvent = storedEvents.get(userId);
+    if (!connection || !storedEvent) continue;
+
+    const accessToken = await refreshAccessToken(db, connection);
+    const calendarId =
+      storedEvent.google_calendar_id ||
+      connection.calendar_id ||
+      DEFAULT_CALENDAR_ID;
+    const body = await buildEventBody(db, appointment, userId);
+
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+        calendarId,
+      )}/events/${encodeURIComponent(storedEvent.google_event_id)}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      },
+    );
+
+    if (!response.ok && response.status !== 404 && response.status !== 410) {
+      throw new Error(
+        `Google Calendar error ${response.status}: ${await response.text()}`,
+      );
+    }
+  }
+}
+
+async function deleteOtherCalendarEvents(
+  db: any,
+  appointment: Appointment,
+  sourceUserId: string,
+) {
+  const participantIds = getParticipantIds(appointment).filter(
+    (userId) => userId !== sourceUserId,
+  );
+  const connections = await getConnectionsByUserId(db, participantIds);
+  const storedEvents = await getStoredEventsByUserId(db, appointment);
+
+  for (const userId of participantIds) {
+    const connection = connections.get(userId);
+    const storedEvent = storedEvents.get(userId);
+    if (!connection || !storedEvent) continue;
+
+    const accessToken = await refreshAccessToken(db, connection);
+    const calendarId =
+      storedEvent.google_calendar_id ||
+      connection.calendar_id ||
+      DEFAULT_CALENDAR_ID;
+
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+        calendarId,
+      )}/events/${encodeURIComponent(storedEvent.google_event_id)}`,
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+
+    if (!response.ok && response.status !== 404 && response.status !== 410) {
+      throw new Error(
+        `Google Calendar error ${response.status}: ${await response.text()}`,
+      );
+    }
+  }
+
+  await db.from("cita_google_events").delete().eq("cita_id", appointment.id);
+}
+
+async function upsertCurrentEvent(
+  db: any,
+  appointmentId: string,
+  userId: string,
+  eventId: string,
+  calendarId: string,
+) {
+  const { error } = await db.from("cita_google_events").upsert({
+    cita_id: appointmentId,
+    user_id: userId,
+    google_event_id: eventId,
+    google_calendar_id: calendarId,
+    sync_origin: "google",
+    last_synced_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  if (error) throw error;
 }
 
 serve(async (req) => {
@@ -187,29 +468,49 @@ serve(async (req) => {
       const appointmentId = getAppointmentId(event);
       if (!appointmentId) continue;
 
+      const appointment = await getAppointment(db, appointmentId);
+      if (!appointment) continue;
+
+      await upsertCurrentEvent(
+        db,
+        appointment.id,
+        typedConnection.user_id,
+        event.id,
+        typedConnection.calendar_id || DEFAULT_CALENDAR_ID,
+      );
+
       if (event.status === "cancelled") {
+        const wasAlreadyCancelled = appointment.estado === "cancelada";
         const { error } = await db
           .from("citas")
           .update({
             estado: "cancelada",
+            google_event_id: null,
+            google_calendar_id: null,
             google_sync_origin: "google",
             google_last_synced_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq("id", appointmentId);
         if (error) throw error;
-        await sendPush(
-          typedConnection.user_id,
-          "Cita cancelada desde Google Calendar",
-          "Ilyrox actualizó la cita porque fue cancelada en Google Calendar.",
-        );
-        changed++;
+
+        if (!wasAlreadyCancelled) {
+          await deleteOtherCalendarEvents(db, appointment, typedConnection.user_id);
+          await sendPush(
+            appointment.agente_id,
+            "Cita cancelada desde Google Calendar",
+            "Ilyrox actualizó la cita porque fue cancelada en Google Calendar.",
+          );
+          changed++;
+        }
         continue;
       }
 
       const dateTime = getDateAndTime(event);
       if (!dateTime) continue;
 
+      const alreadySameDateTime =
+        appointment.fecha === dateTime.fecha && appointment.hora === dateTime.hora;
       const { error } = await db
         .from("citas")
         .update({
@@ -222,12 +523,19 @@ serve(async (req) => {
         .eq("id", appointmentId);
       if (error) throw error;
 
-      await sendPush(
-        typedConnection.user_id,
-        "Cita modificada desde Google Calendar",
-        "Ilyrox actualizó la cita con el nuevo horario de Google Calendar.",
-      );
-      changed++;
+      if (!alreadySameDateTime) {
+        await updateOtherCalendarEvents(
+          db,
+          { ...appointment, fecha: dateTime.fecha, hora: dateTime.hora },
+          typedConnection.user_id,
+        );
+        await sendPush(
+          appointment.agente_id,
+          "Cita modificada desde Google Calendar",
+          "Ilyrox actualizó la cita con el nuevo horario de Google Calendar.",
+        );
+        changed++;
+      }
     }
 
     await db

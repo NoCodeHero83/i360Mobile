@@ -119,21 +119,19 @@ export const PropertyOwnerContact: React.FC<PropertyOwnerContactProps> = ({
           style={[styles.mainContactBtn, { backgroundColor: COLORS.info }]}
           onPress={onEditProperty}
         >
-          <Text style={styles.mainContactBtnText}>
-            {loadingEdit ? (
-              <ActivityIndicator size="small" color={COLORS.primary} />
-            ) : (
-              <>
-                <Ionicons
-                  name="pencil"
-                  size={20}
-                  color={COLORS.white}
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={{ marginLeft: 8 }}>Editar Propiedad</Text>
-              </>
-            )}
-          </Text>
+          {loadingEdit ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <>
+              <Ionicons
+                name="pencil"
+                size={20}
+                color={COLORS.white}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.mainContactBtnText}>Editar Propiedad</Text>
+            </>
+          )}
         </TouchableOpacity>
       ) : (
         <TouchableOpacity style={styles.mainContactBtn} onPress={handleCall}>

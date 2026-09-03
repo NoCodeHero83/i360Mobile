@@ -9,6 +9,7 @@
 import { supabase } from "@/lib/supabase";
 import { logger } from "@/utils/logger";
 import { blockService } from "@/services/blockService";
+import { profileService } from "@/services/profileService";
 import {
   FeedItem,
   PropertyType,
@@ -517,7 +518,7 @@ export const feedService = {
       new Set(feedRows.map((i: any) => (i.perfiles as any)?.id).filter(Boolean)),
     ) as string[];
 
-    const [propertiesRes, statsRows] = await Promise.all([
+    const [propertiesRes, statsRows, previewsByUserId] = await Promise.all([
       applyBlockedPropertyOwners(
         applyCommissionVisibility(
         supabase
@@ -531,6 +532,7 @@ export const feedService = {
         blockedUserIds,
       ),
       feedService.getReviewStats(perfilIds, currentUserId),
+      profileService.getRecommendationPreviewsForUsers(perfilIds, currentUserId),
     ]);
 
     const propertiesMap = new Map(
@@ -544,7 +546,10 @@ export const feedService = {
       .map((item: any) => {
         const perfil = item.perfiles as any;
         const stats = perfil?.id ? statsByUserId.get(perfil.id) : null;
-        const user = buildUser(perfil, stats);
+        const user = {
+          ...buildUser(perfil, stats),
+          recommendedByPreview: perfil?.id ? previewsByUserId[perfil.id] : [],
+        };
         const property = propertiesMap.get(item.contenido_id);
         return property ? mapPropertyToFeedItem(item, property, user) : null;
       })

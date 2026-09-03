@@ -6,7 +6,7 @@ import {
   statusCodes,
 } from "@react-native-google-signin/google-signin";
 import Constants from "expo-constants";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -14,6 +14,7 @@ import {
   googleCalendarService,
 } from "@/services/googleCalendarService";
 import { logger } from "@/utils/logger";
+import { getSupabaseFunctionErrorDetail } from "@/utils/supabaseFunctionError";
 
 const log = logger.scoped("useGoogleCalendar");
 
@@ -26,6 +27,26 @@ const GOOGLE_CALENDAR_WEB_CLIENT_ID =
 const CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.events"];
 
 const getExpiresAt = () => Date.now() + 3600 * 1000;
+
+/**
+ * En iOS el sign-in de Google necesita que la app tenga una UIWindowScene
+ * activa en primer plano (RCTKeyWindow). Si se llama mientras la app no está
+ * activa, Google Sign-In falla con "No presenting view controller found".
+ * Esta función espera a que la app esté en foreground antes de continuar.
+ */
+const waitForForeground = async () => {
+  if (Platform.OS !== "ios") return;
+  if (AppState.currentState === "active") return;
+
+  await new Promise<void>((resolve) => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        subscription.remove();
+        resolve();
+      }
+    });
+  });
+};
 
 let googleSigninConfigured = false;
 
@@ -113,6 +134,10 @@ export function useGoogleCalendar(userId?: string | null) {
         showPlayServicesUpdateDialog: true,
       });
 
+      // En iOS, si la app no está en primer plano, Google Sign-In no puede
+      // presentar su UI ("No presenting view controller found").
+      await waitForForeground();
+
       const signInResponse = await GoogleSignin.signIn();
       if (isCancelledResponse(signInResponse)) {
         showToast("Conexión con Google Calendar cancelada", "info");
@@ -143,7 +168,8 @@ export function useGoogleCalendar(userId?: string | null) {
             },
           );
           if (error) {
-            log.warn("backend connect failed", error);
+            const detail = await getSupabaseFunctionErrorDetail(error);
+            log.warn("backend connect failed", detail);
             showToast(
               "Calendar conectado en este dispositivo, pero falta configurar la sincronización inversa en Supabase.",
               "info",

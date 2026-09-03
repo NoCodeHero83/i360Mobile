@@ -21,6 +21,13 @@ export interface CreateAppointmentInput {
   descripcion?: string | null;
 }
 
+export interface UpdateAppointmentInput {
+  fecha: string;
+  hora: string;
+  tipo: AppointmentType;
+  descripcion?: string | null;
+}
+
 export interface PropertyCalendarInfo {
   titulo: string;
   location: string;
@@ -29,6 +36,7 @@ export interface PropertyCalendarInfo {
 export interface UserBasicInfo {
   nombre: string;
   apellido_paterno: string;
+  email?: string | null;
 }
 
 export const appointmentService = {
@@ -85,6 +93,27 @@ export const appointmentService = {
     return data;
   },
 
+  async updateAppointment(appointmentId: string, input: UpdateAppointmentInput) {
+    const { data, error } = await supabase
+      .from("citas")
+      .update({
+        fecha: input.fecha,
+        hora: input.hora,
+        tipo: input.tipo,
+        descripcion: input.descripcion ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", appointmentId)
+      .select()
+      .single();
+
+    if (error) {
+      log.error("updateAppointment failed", error);
+      throw error;
+    }
+    return data;
+  },
+
   async getPropertyCalendarInfo(
     propertyId: string,
   ): Promise<PropertyCalendarInfo | null> {
@@ -116,7 +145,7 @@ export const appointmentService = {
   async getUserBasicInfo(userId: string): Promise<UserBasicInfo | null> {
     const { data, error } = await supabase
       .from("perfiles")
-      .select("nombre, apellido_paterno")
+      .select("nombre, apellido_paterno, email")
       .eq("id", userId)
       .single();
 
@@ -127,6 +156,7 @@ export const appointmentService = {
     return {
       nombre: data.nombre ?? "",
       apellido_paterno: data.apellido_paterno ?? "",
+      email: data.email ?? null,
     };
   },
 };

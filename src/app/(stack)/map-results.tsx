@@ -17,6 +17,7 @@ import { useMapProperties, MapServerFilters } from "@/hooks/useMapProperties";
 import { usePropertyFilters } from "@/hooks/usePropertyFilters";
 import { useMapFeedItems } from "@/hooks/useMapFeedItems";
 import { usePropertyFiltersStore } from "@/store/propertyFiltersStore";
+import { usePropertyCacheStore } from "@/store/propertyCacheStore";
 import { extractServerFilters } from "@/utils/mapServerFilters";
 import { PropertyCard } from "@/components/cards";
 import { CommentsBottomSheet } from "@/components/modals";
@@ -220,7 +221,12 @@ export default function MapResultsScreen() {
 
   const handleOpenDetail = (item: FeedItem) => {
     if (item.propertyDetails?.id) {
-      router.push({ pathname: "/property/[id]", params: { id: item.propertyDetails.id } });
+      const cachedData = item.propertyDetails;
+      usePropertyCacheStore.getState().setProperty(cachedData.id, cachedData);
+      router.push({
+        pathname: "/property/[id]",
+        params: { id: cachedData.id },
+      });
     }
   };
 

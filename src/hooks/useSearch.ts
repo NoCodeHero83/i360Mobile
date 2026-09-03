@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { useLocationSearchStore } from "@/store/locationSearchStore";
 import { usePropertyFiltersStore } from "@/store/propertyFiltersStore";
+import { usePropertyCacheStore } from "@/store/propertyCacheStore";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { logger } from "@/utils/logger";
@@ -346,8 +347,14 @@ export function useSearch() {
     router.push(`/(stack)/reel/${feedItemId}`);
   }, []);
 
-  const navigateToProperty = useCallback((propertyId: string) => {
-    router.push(`/(stack)/property/${propertyId}`);
+  const navigateToProperty = useCallback((propertyId: string, propertyData?: SearchProperty) => {
+    if (propertyData) {
+      usePropertyCacheStore.getState().setProperty(propertyId, propertyData as any);
+    }
+    router.push({
+      pathname: "/(stack)/property/[id]",
+      params: { id: propertyId },
+    });
   }, []);
 
   return {

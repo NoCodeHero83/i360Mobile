@@ -17,6 +17,7 @@ import { useGoogleCalendar } from "@/hooks/useGoogleCalendar";
 import { useAppointments } from "../hooks/useAppointments";
 import AppointmentTabs from "./Appointments/AppointmentTabs";
 import AppointmentList from "./Appointments/AppointmentList";
+import CreateAppointmentModal from "./Appointments/CreateAppointmentModal";
 
 const Appointments: React.FC = () => {
   const { profile } = useAuth();
@@ -32,15 +33,19 @@ const Appointments: React.FC = () => {
     appointments,
     loading,
     showRateModal,
+    editingAppointment,
     handleMarkComplete,
     handleMarkCancel,
     handleOpenRating,
+    handleEditAppointment,
     handleSyncCalendar,
     handleSubmitRating,
+    handleAppointmentUpdated,
     handleContactPress,
     handlePropertyPress,
     handleUserPress,
     closeRatingModal,
+    closeEditModal,
     rateTarget,
   } = useAppointments();
 
@@ -101,6 +106,8 @@ const Appointments: React.FC = () => {
           onOpenRating={handleOpenRating}
           onSyncCalendar={handleSyncCalendar}
           onContact={handleContactPress}
+          onEdit={handleEditAppointment}
+          currentUserId={profile?.id}
           onPropertyPress={handlePropertyPress}
           onUserPress={handleUserPress}
         />
@@ -111,6 +118,15 @@ const Appointments: React.FC = () => {
         onClose={closeRatingModal}
         onSubmit={handleSubmitRating}
         target={rateTarget}
+      />
+
+      <CreateAppointmentModal
+        visible={!!editingAppointment}
+        onClose={closeEditModal}
+        currentUserId={profile?.id ?? ""}
+        mode="edit"
+        appointment={editingAppointment}
+        onSaved={handleAppointmentUpdated}
       />
     </ScreenWrapper>
   );

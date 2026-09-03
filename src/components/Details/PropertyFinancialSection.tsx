@@ -119,7 +119,9 @@ export const PropertyFinancialSection: React.FC<PropertyFinancialSectionProps> =
                         ? `${Number(op.comision_meses)} ${Number(op.comision_meses) === 1 ? "mes" : "meses"}`
                         : op.comision_porcentaje != null
                           ? `${Number(op.comision_porcentaje)}%`
-                          : `$${Number(op.comision_monto_fijo).toLocaleString("es-MX")}`}
+                          : op.comision_monto_fijo != null
+                            ? `$${Number(op.comision_monto_fijo).toLocaleString("es-MX")}`
+                            : "No especificada"}
                     </Text>
                   </View>
                 )}
@@ -129,7 +131,9 @@ export const PropertyFinancialSection: React.FC<PropertyFinancialSectionProps> =
                     <Text style={styles.commissionValue}>
                       {op.porcentaje_comision_compartida != null
                         ? `${op.porcentaje_comision_compartida}%`
-                        : `$${Number(op.monto_comision_compartida).toLocaleString("es-MX")}`}
+                        : op.monto_comision_compartida != null
+                          ? `$${Number(op.monto_comision_compartida).toLocaleString("es-MX")}`
+                          : "No especificado"}
                     </Text>
                   </View>
                 )}

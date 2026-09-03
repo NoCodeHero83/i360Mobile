@@ -311,7 +311,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
         return (
           <>
             <SectionHeader title="Fichas" />
-            <PropertyFichasGrid items={s.displayItems} onPress={(id) => handleNavigate(() => navigateToProperty(id), TIPO_BUSQUEDA.PROPIEDAD, getPropertyData(id))} />
+            <PropertyFichasGrid items={s.displayItems} onPress={(property) => handleNavigate(() => navigateToProperty(property.id, property), TIPO_BUSQUEDA.PROPIEDAD, getPropertyData(property.id))} />
             {s.showToggle && <ToggleButton isExpanded={s.isExpanded} count={results.properties.length} onPress={s.toggle} />}
           </>
         );
@@ -403,7 +403,7 @@ export default function SearchOverlay({ visible, onClose, initialQuery = "" }: S
   const renderTabFichas = () => (
     <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       {results.properties.length > 0
-        ? <PropertyFichasGrid items={results.properties} onPress={(id) => handleNavigate(() => navigateToProperty(id), TIPO_BUSQUEDA.PROPIEDAD, getPropertyData(id))} />
+        ? <PropertyFichasGrid items={results.properties} onPress={(property) => handleNavigate(() => navigateToProperty(property.id, property), TIPO_BUSQUEDA.PROPIEDAD, getPropertyData(property.id))} />
         : (!loading && <EmptyResults query={query} />)}
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -729,7 +729,7 @@ function ReelGrid({ items, onPress }: { items: SearchReel[]; onPress: (feedItemI
   );
 }
 
-function PropertyFichasGrid({ items, onPress }: { items: SearchProperty[]; onPress: (id: string) => void }) {
+function PropertyFichasGrid({ items, onPress }: { items: SearchProperty[]; onPress: (property: SearchProperty) => void }) {
   const rows: SearchProperty[][] = [];
   for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2));
   return (
@@ -737,7 +737,7 @@ function PropertyFichasGrid({ items, onPress }: { items: SearchProperty[]; onPre
       {rows.map((row, ri) => (
         <View key={ri} style={fichaStyles.columnWrapper}>
           {row.map((item) => (
-            <PropertyFichaCard key={item.id} property={item} onPress={() => onPress(item.id)} />
+            <PropertyFichaCard key={item.id} property={item} onPress={() => onPress(item)} />
           ))}
           {row.length === 1 && <View style={{ width: FICHA_ITEM_WIDTH }} />}
         </View>

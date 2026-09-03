@@ -24,12 +24,14 @@ export interface AppointmentItem {
     estado: string;
     agente_id: string;
     cliente_id: string;
+    created_by?: string | null;
     propiedad_id: string;
     user: {
         id: string;
         name: string;
         avatar: string | null;
         role: string;
+        email?: string | null;
     };
     propertyId?: string;
     propertyTitle?: string;

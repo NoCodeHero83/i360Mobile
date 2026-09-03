@@ -19,6 +19,7 @@ import { usePropertyFiltersStore } from "../store/propertyFiltersStore";
 import { useChatStore } from "../store/chatStore";
 import { useCitasStore } from "../store/citasStore";
 import { useMatchesStore } from "../store/matchesStore";
+import { useNotifications } from "../context/NotificationContext";
 
 const LOGO_SOURCE = require("../assets/Logo.png");
 
@@ -41,6 +42,9 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
   const unreadCount = useChatStore((state) => state.totalUnreadCount);
   const pendingCitas = useCitasStore((state) => state.pendingCount);
   const unseenMatches = useMatchesStore((state) => state.unseenCount);
+  const { unreadCount: notificationUnreadCount } = useNotifications();
+  
+  const totalMessagesBadge = unreadCount + notificationUnreadCount;
 
   const handleNavigation = (screen: string) => {
     switch (screen) {
@@ -117,10 +121,10 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
                     </Text>
                   </View>
                 )}
-                {screen === "Messages" && unreadCount > 0 && (
+                {screen === "Messages" && totalMessagesBadge > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>
-                      {unreadCount > 9 ? "9+" : unreadCount}
+                      {totalMessagesBadge > 9 ? "9+" : totalMessagesBadge}
                     </Text>
                   </View>
                 )}

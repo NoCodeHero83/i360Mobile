@@ -108,13 +108,8 @@
       [
         "onesignal-expo-plugin",
         {
-          "mode": "production"
-        }
-      ],
-      [
-        "./plugins/withNotificationSound",
-        {
-          "sounds": ["audio_ilyrox.wav"]
+          "mode": "production",
+          "sounds": ["./src/assets/sounds/audio_ilyrox.wav"]
         }
       ],
       [

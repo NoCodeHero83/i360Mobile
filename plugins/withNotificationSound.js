@@ -1,4 +1,4 @@
-const { withDangerousMod, withXcodeProject, ConfigPlugin } = require('@expo/config-plugins');
+const { withDangerousMod, ConfigPlugin } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -37,26 +37,16 @@ function withAndroidNotificationSound(config, { sounds }) {
 }
 
 function withIosNotificationSound(config, { sounds }) {
-  return withXcodeProject(config, (config) => {
-    const xcodeProject = config.modResults;
-    const { platformProjectRoot, projectRoot } = config.modRequest;
+  return withDangerousMod(config, ['ios'], async (config) => {
+    const iosDir = config.modRequest.platformProjectRoot;
 
     sounds.forEach((sound) => {
-      const sourcePath = path.join(projectRoot, 'src', 'assets', 'sounds', sound);
-      const targetDir = platformProjectRoot;
-      const targetPath = path.join(targetDir, sound);
+      const sourcePath = path.join(config.modRequest.projectRoot, 'src', 'assets', 'sounds', sound);
+      const targetPath = path.join(iosDir, sound);
 
       if (fs.existsSync(sourcePath)) {
         fs.copyFileSync(sourcePath, targetPath);
         console.log(`[withNotificationSound] Copied iOS sound: ${sound}`);
-
-        const fileExists = xcodeProject.hasFile(sound);
-        if (!fileExists) {
-          xcodeProject.addResourceFile(sound, {
-            target: xcodeProject.getFirstTarget().uuid
-          });
-          console.log(`[withNotificationSound] Added to Xcode project: ${sound}`);
-        }
       } else {
         console.warn(`[withNotificationSound] Sound file not found: ${sourcePath}`);
       }
